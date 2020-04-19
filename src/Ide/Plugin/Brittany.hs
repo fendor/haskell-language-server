@@ -13,7 +13,6 @@ import           Language.Haskell.LSP.Types            as J
 import qualified Language.Haskell.LSP.Types.Lens       as J
 import           Ide.Plugin.Formatter
 import           Ide.Types
-
 import           System.FilePath
 import           Data.Maybe (maybeToList)
 
