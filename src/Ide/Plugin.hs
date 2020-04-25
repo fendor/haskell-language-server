@@ -153,6 +153,7 @@ data FallbackCodeActionParams =
 
 -- -----------------------------------------------------------
 
+-- codeLensPlugins :: [(PluginId, CodeLensProvider)] -> Plugin Config
 codeLensPlugins :: [(PluginId, CodeLensProvider)] -> Plugin Config
 codeLensPlugins cas = Plugin codeLensRules (codeLensHandlers cas)
 

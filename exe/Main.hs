@@ -90,6 +90,7 @@ import Development.IDE.LSP.HoverDefinition as HoverDefinition
 import Ide.Plugin.Example                 as Example
 import Ide.Plugin.Example2                as Example2
 import Ide.Plugin.GhcIde                  as GhcIde
+import Ide.Plugin.Bios                    as Bios
 import Ide.Plugin.Floskell                as Floskell
 import Ide.Plugin.Ormolu                  as Ormolu
 #if AGPL
@@ -122,6 +123,7 @@ idePlugins includeExamples = pluginDescToIdePlugins allPlugins
       -- , liquidDescriptor      "liquid"
       -- , packageDescriptor     "package"
       GhcIde.descriptor  "ghcide"
+      , Bios.descriptor "bios"
       , Pragmas.descriptor  "pragmas"
       , Floskell.descriptor "floskell"
       -- , genericDescriptor     "generic"

@@ -41,6 +41,7 @@ library
       Ide.Cradle
       Ide.Logger
       Ide.Plugin
+      Ide.Plugin.Bios
       Ide.Plugin.Config
       Ide.Plugin.Example
       Ide.Plugin.Example2
