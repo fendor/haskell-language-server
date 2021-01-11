@@ -70,6 +70,7 @@ import NameCache
 import Packages
 import Control.Exception (evaluate)
 import Data.Void
+import Control.Applicative (Alternative((<|>)))
 
 
 data CacheDirs = CacheDirs
@@ -113,6 +114,7 @@ loadSessionWithOptions SessionLoadingOptions{..} dir = do
   hscEnvs <- newVar Map.empty :: IO (Var HieMap)
   -- Mapping from a Filepath to HscEnv
   fileToFlags <- newVar Map.empty :: IO (Var FlagsMap)
+  filesMap <- newVar HM.empty :: IO (Var FilesMap)
   -- Version of the mappings above
   version <- newVar 0
   let returnWithVersion fun = IdeGhcSession fun <$> liftIO (readVar version)
@@ -271,6 +273,8 @@ loadSessionWithOptions SessionLoadingOptions{..} dir = do
 
           modifyVar_ fileToFlags $ \var -> do
               pure $ Map.insert hieYaml (HM.fromList (concatMap toFlagsMap all_targets)) var
+          modifyVar_ filesMap $ \var -> do
+              pure $ HM.union var (HM.fromList (zip (map fst $ concatMap toFlagsMap all_targets) (repeat hieYaml)))
 
           extendKnownTargets all_targets
 
@@ -329,7 +333,9 @@ loadSessionWithOptions SessionLoadingOptions{..} dir = do
                let res = (map (renderCradleError ncfp) err, Nothing)
                modifyVar_ fileToFlags $ \var -> do
                  pure $ Map.insertWith HM.union hieYaml (HM.singleton ncfp (res, dep_info)) var
-               return (res, maybe [] pure hieYaml ++ concatMap cradleErrorDependencies err)
+               modifyVar_ filesMap $ \var -> do
+                 pure $ HM.insert ncfp hieYaml var
+               return (res,[])
 
     -- This caches the mapping from hie.yaml + Mod.hs -> [String]
     -- Returns the Ghc session and the cradle dependencies
@@ -358,9 +364,11 @@ loadSessionWithOptions SessionLoadingOptions{..} dir = do
     -- before attempting to do so.
     let getOptions :: FilePath -> IO (IdeResult HscEnvEq, [FilePath])
         getOptions file = do
+            ncfp <- toNormalizedFilePath' <$> canonicalizePath file
+            cachedHieYamlLocation <- HM.lookup ncfp <$> readVar filesMap
             hieYaml <- cradleLoc file
-            sessionOpts (hieYaml, file) `catch` \e ->
-                return (([renderPackageSetupException file e], Nothing), maybe [] pure hieYaml)
+            sessionOpts (join cachedHieYamlLocation <|> hieYaml, file) `catch` \e ->
+                return (([renderPackageSetupException file e], Nothing),[])
 
     returnWithVersion $ \file -> do
       opts <- liftIO $ join $ mask_ $ modifyVar runningCradle $ \as -> do
@@ -544,6 +552,7 @@ renderCradleError nfp (CradleError _ _ec t) =
 type DependencyInfo = Map.Map FilePath (Maybe UTCTime)
 type HieMap = Map.Map (Maybe FilePath) (HscEnv, [RawComponentInfo])
 type FlagsMap = Map.Map (Maybe FilePath) (HM.HashMap NormalizedFilePath (IdeResult HscEnvEq, DependencyInfo))
+type FilesMap = HM.HashMap NormalizedFilePath (Maybe FilePath)
 
 -- This is pristine information about a component
 data RawComponentInfo = RawComponentInfo
