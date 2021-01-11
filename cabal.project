@@ -14,6 +14,12 @@ packages:
          ./plugins/hls-haddock-comments-plugin
          ./plugins/hls-splice-plugin
 
+source-repository-package
+    type: git
+    location: https://github.com/mpickering/hie-bios.git
+    tag: f4f45f2826cc575578b969eeaafcc30c68c67a4b
+
+
 tests: true
 
 package *
