@@ -217,6 +217,35 @@ pluginResponsible uri pluginDesc
     where
       mfp = uriToFilePath uri
 
+instance PluginMethod TextDocumentDefinition where
+  pluginEnabled _ msgParams pluginDesc _ =
+    pluginResponsible uri pluginDesc
+    where
+      uri = msgParams ^. J.textDocument . J.uri
+  combineResponses _ _ _ _ (x :| _) = x
+
+instance PluginMethod TextDocumentTypeDefinition where
+  pluginEnabled _ msgParams pluginDesc _ =
+    pluginResponsible uri pluginDesc
+    where
+      uri = msgParams ^. J.textDocument . J.uri
+  combineResponses _ _ _ _ (x :| _) = x
+
+instance PluginMethod TextDocumentDocumentHighlight where
+  pluginEnabled _ msgParams pluginDesc _ =
+    pluginResponsible uri pluginDesc
+    where
+      uri = msgParams ^. J.textDocument . J.uri
+
+instance PluginMethod TextDocumentReferences where
+  pluginEnabled _ msgParams pluginDesc _ =
+    pluginResponsible uri pluginDesc
+    where
+      uri = msgParams ^. J.textDocument . J.uri
+
+instance PluginMethod WorkspaceSymbol where
+  pluginEnabled _ _ _ _ = True
+
 instance PluginMethod TextDocumentCodeLens where
   pluginEnabled _ msgParams pluginDesc config =
     pluginResponsible uri pluginDesc
