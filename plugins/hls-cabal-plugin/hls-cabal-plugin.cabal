@@ -9,6 +9,8 @@ author:             Fendor
 maintainer:         fendor@posteo.de
 category:           Development
 extra-source-files: CHANGELOG.md
+                    test/testdata/simple.cabal
+                    test/testdata/simple.cabal.golden.txt
 
 library
   exposed-modules:  Ide.Plugin.Cabal
@@ -50,3 +52,4 @@ test-suite hls-cabal-plugin-test
     , lsp
     , lsp-types
     , text
+    , tasty-hunit
