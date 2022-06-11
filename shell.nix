@@ -1,11 +1,16 @@
-# This file is the compt layer of flakes: https://github.com/edolstra/flake-compat
-# See flake.nix for details
-(import (
-  let
-    lock = builtins.fromJSON (builtins.readFile ./flake.lock);
-  in fetchTarball {
-    url = "https://github.com/edolstra/flake-compat/archive/${lock.nodes.flake-compat.locked.rev}.tar.gz";
-    sha256 = lock.nodes.flake-compat.locked.narHash; }
-) {
-  src =  ./.;
-}).shellNix
+with (import <nixpkgs> {});
+stdenv.mkDerivation {
+  name = "haskell-ide-engine";
+  buildInputs = [
+    gmp
+    zlib
+    ncurses
+
+    haskellPackages.cabal-install
+  ];
+  src = null;
+  shellHook = ''
+    export LD_LIBRARY_PATH=${gmp}/lib:${zlib}/lib:${ncurses}/lib
+    export PATH=$PATH:$HOME/.local/bin
+  '';
+}
