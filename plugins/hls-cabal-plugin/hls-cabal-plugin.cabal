@@ -12,6 +12,7 @@ extra-source-files: CHANGELOG.md
 
 library
   exposed-modules:  Ide.Plugin.Cabal
+                    Ide.Plugin.Cabal.Parse
   build-depends:
     , aeson
     , base            >=4.12 && <5
@@ -25,6 +26,11 @@ library
     , lsp-types
     , text
     , transformers
+    -- BEGIN "Ide.Plugin.Cabal.Parse"
+    , Cabal == 3.6.2.0
+    , bytestring
+    , directory
+    -- END
 
   -- see https://github.com/lspitzner/brittany/issues/364
   -- TODO: remove these when GH issue #2005 is resolved
