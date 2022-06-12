@@ -31,6 +31,8 @@ library
     , text
     , unordered-containers
     , transformers
+    , hashable
+    , deepseq
     -- BEGIN "Ide.Plugin.Cabal.Parse"
     , Cabal == 3.6.2.0
     , bytestring

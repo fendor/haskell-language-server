@@ -23,19 +23,45 @@ import qualified Ide.Plugin.Cabal.Parse as Parse
 import qualified Ide.Plugin.Cabal.Diag as Diag
 import qualified Data.List.NonEmpty as NE
 import qualified Data.HashMap.Strict as Map
-import Language.LSP.Server ( sendRequest )
+import Control.DeepSeq (NFData)
+import           Data.Hashable
+import           Data.Typeable
+import           Language.LSP.Server
+import qualified Development.IDE.Core.Shake as Shake
 
-newtype Log = LogText T.Text deriving Show
+
+data Log
+  = LogText T.Text
+  | LogShake Shake.Log deriving Show
 
 instance Pretty Log where
   pretty = \case
+    LogShake log -> pretty log
     LogText log' -> pretty log'
 
 descriptor :: Recorder (WithPriority Log) -> PluginId -> PluginDescriptor IdeState
 descriptor recorder plId = (defaultCabalPluginDescriptor plId)
-  { pluginHandlers = mkPluginHandler STextDocumentCodeLens (codeLens recorder)
+  { pluginRules = exampleRules recorder
+  , pluginHandlers = mkPluginHandler STextDocumentCodeLens (codeLens recorder)
   , pluginCommands = [PluginCommand commandId' "example adding" addTodoCmd]
   }
+
+data Example = Example
+    deriving (Eq, Show, Typeable, Generic)
+instance Hashable Example
+instance NFData   Example
+
+type instance RuleResult Example = ()
+
+exampleRules :: Recorder (WithPriority Log) -> Rules ()
+exampleRules recorder = do
+  define (cmapWithPrio LogShake recorder) $ \Example file -> do
+    _pm <- liftIO $ Parse.parseCabalFile (fromNormalizedFilePath file)
+    let diagLst = case _pm of
+          (_, Left (_, pErrorNE)) ->
+            NE.toList $ NE.map (Diag.errorDiag file) pErrorNE
+          _ -> []
+    return (diagLst, Just ())
 
 commandId' :: CommandId
 commandId' = "codelens.cabal.parse"
@@ -59,7 +85,7 @@ codeLens recorder _ideState plId CodeLensParams{_textDocument=TextDocumentIdenti
       let
         cmdParams = AddTodoParams uri diag'
         cmd = mkLspCommand plId commandId' title (Just [toJSON cmdParams])
-        title = "Add TODO Item via Code Lens"
+        title = "ERROR: " <> Diag._message diag'
       in CodeLens (Diag._range diag') (Just cmd) Nothing
 data AddTodoParams = AddTodoParams
   { file     :: Uri  -- ^ Uri of the file to add the pragma to
