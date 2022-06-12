@@ -1,20 +1,15 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE TupleSections #-}
-module Ide.Plugin.Cabal.Diag where
+module Ide.Plugin.Cabal.Diag
+( errorDiag
+  -- * Re-exports
+, FileDiagnostic
+, Diagnostic(..)
+)
+where
 
-import           Control.Monad.IO.Class
-import           Control.Monad.Trans.Maybe
-import           Data.Aeson
-import           Data.Functor
 import qualified Data.Text                  as T
-import           Data.Typeable
 import           Development.IDE            as D
-import           Development.IDE.Core.Shake hiding (Log)
-import qualified Development.IDE.Core.Shake as Shake
-import           GHC.Generics
-import           Ide.PluginUtils
-import           Ide.Types
-import           Language.LSP.Server
 import           Language.LSP.Types
 import qualified Ide.Plugin.Cabal.Parse as Lib
 
