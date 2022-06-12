@@ -57,11 +57,14 @@ exampleRules :: Recorder (WithPriority Log) -> Rules ()
 exampleRules recorder = do
   define (cmapWithPrio LogShake recorder) $ \Example file -> do
     _pm <- liftIO $ Parse.parseCabalFile (fromNormalizedFilePath file)
+    liftIO $ log' Debug $ LogText $ T.pack $ "Parsed file: " <> fromNormalizedFilePath file <> ". Result: " <> show _pm
     let diagLst = case _pm of
           (_, Left (_, pErrorNE)) ->
             NE.toList $ NE.map (Diag.errorDiag file) pErrorNE
           _ -> []
     return (diagLst, Just ())
+  where
+    log' = logWith recorder
 
 commandId' :: CommandId
 commandId' = "codelens.cabal.parse"
