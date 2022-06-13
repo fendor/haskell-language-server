@@ -18,12 +18,13 @@ import Language.LSP.Types
       NormalizedFilePath,
       DiagnosticSeverity(DsError),
       DiagnosticSource,
-      Position(Position) )
+      Position(Position), fromNormalizedFilePath )
 import qualified Ide.Plugin.Cabal.Parse as Lib
+import Distribution.Fields (showPError)
 
 errorDiag :: NormalizedFilePath -> Lib.PError -> FileDiagnostic
-errorDiag fp (Lib.PError (Lib.Position line column) errMsg) =
-    mkDiag fp (T.pack "parsing") DsError range (T.pack errMsg)
+errorDiag fp err@(Lib.PError (Lib.Position line column) _) =
+    mkDiag fp (T.pack "parsing") DsError range (T.pack $ showPError (fromNormalizedFilePath fp) err)
   where
     -- LSP is zero-based, Cabal is one-based
     line' = line-1
