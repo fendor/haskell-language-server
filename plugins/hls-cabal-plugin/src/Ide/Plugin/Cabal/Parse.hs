@@ -1,5 +1,6 @@
 module Ide.Plugin.Cabal.Parse
 ( parseCabalFile
+, parseCabalFileContents
   -- * Re-exports
 , FilePath
 , NonEmpty(..)
@@ -29,13 +30,18 @@ parseCabalFile
     :: FilePath
     -> IO ([PWarning], Either (Maybe Version, NonEmpty PError) GenericPackageDescription)
 parseCabalFile =
-    readGenericPackageDescription'
+    readAndParseFile'
   where
-    readGenericPackageDescription' = readAndParseFile' parseGenericPackageDescription
-    readAndParseFile' parser fpath = do
+    readAndParseFile' fpath = do
         exists <- Dir.doesFileExist fpath
         unless exists $
             Exit.die $
                 "Error Parsing: file \"" ++ fpath ++ "\" doesn't exist. Cannot continue."
         bs <- BS.readFile fpath
-        pure $ runParseResult (parser bs)
+        parseCabalFileContents bs
+
+parseCabalFileContents
+    :: BS.ByteString
+    -> IO ([PWarning], Either (Maybe Version, NonEmpty PError) GenericPackageDescription)
+parseCabalFileContents bs =
+    pure $ runParseResult (parseGenericPackageDescription bs)
