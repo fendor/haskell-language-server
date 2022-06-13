@@ -17,9 +17,12 @@ errorDiag :: NormalizedFilePath -> Lib.PError -> FileDiagnostic
 errorDiag fp (Lib.PError (Lib.Position line column) errMsg) =
     mkDiag fp (T.pack "parsing") DsError range (T.pack errMsg)
   where
+    -- LSP is zero-based, Cabal is one-based
+    line' = line-1
+    col' = column-1
     range = Range
-        (Position (fromIntegral line) (fromIntegral column))
-        (Position (fromIntegral $ line + 1) 0)
+        (Position (fromIntegral line') (fromIntegral col'))
+        (Position (fromIntegral $ line' + 1) 0)
 
 mkDiag :: NormalizedFilePath
        -> DiagnosticSource
