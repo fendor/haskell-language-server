@@ -18,6 +18,7 @@ import           Ide.Types
 import           Language.LSP.Types
 import qualified Ide.Plugin.Cabal.Parse as Parse
 import qualified Ide.Plugin.Cabal.Diag as Diag
+import qualified Ide.Plugin.Cabal.LicenseSuggest as LicenseSuggest
 import qualified Data.List.NonEmpty as NE
 import Control.DeepSeq (NFData)
 import           Data.Hashable
@@ -34,7 +35,8 @@ import Control.Concurrent.STM
 import qualified Language.LSP.VFS as VFS
 import qualified Data.ByteString as BS
 import qualified Data.Text.Encoding as Encoding
-import Development.IDE.LSP.Notifications (whenUriFile)
+import Language.LSP.Server (LspM)
+import Ide.Plugin.Config (Config)
 
 data Log
   = LogText T.Text
@@ -48,6 +50,7 @@ instance Pretty Log where
 descriptor :: Recorder (WithPriority Log) -> PluginId -> PluginDescriptor IdeState
 descriptor recorder plId = (defaultCabalPluginDescriptor plId)
   { pluginRules = exampleRules recorder
+  , pluginHandlers = mkPluginHandler STextDocumentCodeAction licenseSuggest
   , pluginNotificationHandlers = mconcat
   [ mkPluginNotificationHandler LSP.STextDocumentDidOpen $
       \ide vfs _ (DidOpenTextDocumentParams TextDocumentItem{_uri,_version}) -> liftIO $ do
@@ -89,6 +92,16 @@ descriptor recorder plId = (defaultCabalPluginDescriptor plId)
   ]
 
   }
+  where
+    whenUriFile :: Uri -> (NormalizedFilePath -> IO ()) -> IO ()
+    whenUriFile uri act = whenJust (LSP.uriToFilePath uri) $ act . toNormalizedFilePath'
+    licenseSuggest
+      :: IdeState
+      -> PluginId
+      -> CodeActionParams
+      -> LspM Config (Either ResponseError (ResponseResult 'TextDocumentCodeAction))
+    licenseSuggest _ _ (CodeActionParams _ _ (TextDocumentIdentifier uri) _range CodeActionContext{_diagnostics=List diags}) =
+      pure $ Right $ List $ concatMap (LicenseSuggest.licenseErrorAction uri) diags
 
 data Example = Example
     deriving (Eq, Show, Typeable, Generic)

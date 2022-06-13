@@ -16,6 +16,7 @@ library
   exposed-modules:  Ide.Plugin.Cabal
                     Ide.Plugin.Cabal.Parse
                     Ide.Plugin.Cabal.Diag
+                    Ide.Plugin.Cabal.LicenseSuggest
   build-depends:
     , aeson
     , base            >=4.12 && <5
@@ -34,6 +35,7 @@ library
     , hashable
     , deepseq
     , stm
+    , regex-tdfa
     -- BEGIN "Ide.Plugin.Cabal.Parse"
     , Cabal == 3.6.2.0
     , bytestring
