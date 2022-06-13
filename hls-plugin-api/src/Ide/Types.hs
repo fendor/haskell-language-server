@@ -119,7 +119,11 @@ data PluginDescriptor (ideState :: *) =
                    , pluginNotificationHandlers :: PluginNotificationHandlers ideState
                    , pluginModifyDynflags :: DynFlagsModifications
                    , pluginCli            :: Maybe (ParserInfo (IdeCommand ideState))
-                   , pluginFileType       :: [T.Text]
+                   , pluginFileType       :: [T.Text] 
+                   -- ^ File extension of the files the plugin is responsible for.  
+                   --   The plugin is only allowed to handle files with these extensions
+                   --   When writing handlers, etc. for this plugin it can be assumed that all handled files are of this type.
+                   --   The file extension must have a leading '.'.
                    }
 
 -- | An existential wrapper of 'Properties'
@@ -165,7 +169,14 @@ defaultConfigDescriptor = ConfigDescriptor True False (mkCustomConfig emptyPrope
 class HasTracing (MessageParams m) => PluginMethod (k :: MethodType) (m :: Method FromClient k) where
 
   -- | Parse the configuration to check if this plugin is enabled
-  pluginEnabled :: SMethod m -> MessageParams m -> PluginDescriptor c -> Config -> Bool
+  pluginEnabled 
+    :: SMethod m 
+    -> MessageParams m
+    -- ^ Whether a plugin is enabled might depend on the message parameters 
+    --   eg 'pluginFileType' specifies what file extension a plugin is allowed to handle
+    -> PluginDescriptor c 
+    -> Config 
+    -> Bool
 
   default pluginEnabled :: (HasTextDocument (MessageParams m) doc, HasUri doc Uri)
                               => SMethod m -> MessageParams m -> PluginDescriptor c -> Config -> Bool
@@ -220,6 +231,9 @@ instance PluginRequestMethod TextDocumentCodeAction where
         , Just caKind <- ca ^. kind = any (\k -> k `codeActionKindSubsumes` caKind) allowed
         | otherwise = False
 
+-- | Check whether the given plugin descriptor is responsible for the file with the given path.
+--   Compares the file extension of the file at the given path with the file extension 
+--   the plugin is responsible for.
 pluginResponsible :: Uri -> PluginDescriptor c -> Bool
 pluginResponsible uri pluginDesc
     | Just fp <- mfp
@@ -307,8 +321,9 @@ instance PluginMethod Request TextDocumentPrepareCallHierarchy where
       pid = pluginId pluginDesc
 
 instance PluginMethod Request TextDocumentSelectionRange where
-  pluginEnabled _ _ pluginDesc conf = pluginEnabledConfig plcSelectionRangeOn pid conf
+  pluginEnabled _ msgParams pluginDesc conf = pluginResponsible uri pluginDesc && pluginEnabledConfig plcSelectionRangeOn pid conf
     where
+      uri = msgParams ^. J.textDocument . J.uri
       pid = pluginId pluginDesc
 
 instance PluginMethod Request CallHierarchyIncomingCalls where
@@ -399,7 +414,7 @@ instance PluginRequestMethod TextDocumentCompletion where
           consumeCompletionResponse n (InR (CompletionList isCompleteResponse (List xx)))
 
 instance PluginRequestMethod TextDocumentFormatting where
-  combineResponses _ _ _ _ x = sconcat x
+  combineResponses _ _ _ _ (x :| _) = x
 
 instance PluginRequestMethod TextDocumentRangeFormatting where
   combineResponses _ _ _ _ (x :| _) = x

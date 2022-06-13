@@ -1,6 +1,5 @@
 {-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE DeriveGeneric         #-}
-{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE LambdaCase            #-}
@@ -15,7 +14,7 @@ module Ide.Plugin.ExampleCabal where
 import           Control.Monad.IO.Class
 import           Data.Aeson
 import qualified Data.Text as T
-import           Development.IDE            as D
+import           Development.IDE            as D hiding (pluginHandlers)
 import           GHC.Generics
 import           Ide.PluginUtils
 import           Ide.Types
@@ -29,7 +28,7 @@ instance Pretty Log where
     LogText log -> pretty log
 
 descriptor :: Recorder (WithPriority Log) -> PluginId -> PluginDescriptor IdeState
-descriptor recorder plId = (defaultCabalPluginDescriptor plId)
+descriptor recorder plId = (defaultCabalPluginDescriptor plId :: PluginDescriptor IdeState)
   { pluginHandlers = mkPluginHandler STextDocumentCodeLens       (codeLens recorder)
   }
 

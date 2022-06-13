@@ -18,7 +18,7 @@ module Development.IDE.LSP.Server
 import           Control.Monad.Reader
 import           Development.IDE.Core.Shake
 import           Development.IDE.Core.Tracing
-import           Ide.Types                    (HasTracing, traceWithSpan, PluginRequestMethod, PluginNotificationMethod)
+import           Ide.Types                    (HasTracing, traceWithSpan)
 import           Language.LSP.Server          (Handlers, LspM)
 import qualified Language.LSP.Server          as LSP
 import           Language.LSP.Types
