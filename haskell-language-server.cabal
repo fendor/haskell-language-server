@@ -240,13 +240,6 @@ common cabal
     build-depends: hls-cabal-plugin ^>= 0.1
     cpp-options: -Dcabal
 
-
-common cabal
-  if flag(cabal)
-    build-depends: hls-cabal-plugin ^>= 0.1
-    cpp-options: -Dcabal
-
-
 common class
   if flag(class)
     build-depends: hls-class-plugin ^>= 1.0
