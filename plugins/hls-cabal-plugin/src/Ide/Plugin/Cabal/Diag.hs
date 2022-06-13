@@ -9,8 +9,16 @@ module Ide.Plugin.Cabal.Diag
 where
 
 import qualified Data.Text                  as T
-import           Development.IDE            as D
-import           Language.LSP.Types
+import Development.IDE
+    ( ShowDiagnostic(ShowDiag),
+      FileDiagnostic )
+import Language.LSP.Types
+    ( Range(Range),
+      Diagnostic(..),
+      NormalizedFilePath,
+      DiagnosticSeverity(DsError),
+      DiagnosticSource,
+      Position(Position) )
 import qualified Ide.Plugin.Cabal.Parse as Lib
 
 errorDiag :: NormalizedFilePath -> Lib.PError -> FileDiagnostic
@@ -30,7 +38,7 @@ mkDiag :: NormalizedFilePath
        -> Range
        -> T.Text
        -> FileDiagnostic
-mkDiag file diagSource sev loc msg = (file, D.ShowDiag,)
+mkDiag file diagSource sev loc msg = (file, ShowDiag,)
     Diagnostic
     { _range    = loc
     , _severity = Just sev
