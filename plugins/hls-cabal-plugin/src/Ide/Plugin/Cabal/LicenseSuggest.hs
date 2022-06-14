@@ -13,26 +13,58 @@ module Ide.Plugin.Cabal.LicenseSuggest
 where
 
 import qualified Data.Text                  as T
-import Language.LSP.Types (Diagnostic(..), TextEdit (TextEdit), WorkspaceEdit (WorkspaceEdit), CodeActionKind (CodeActionQuickFix), CodeAction (CodeAction), type (|?) (..), List (List), Range (Range), Position (Position))
+import Language.LSP.Types
+    ( Diagnostic(..),
+    TextEdit (TextEdit),
+    WorkspaceEdit (WorkspaceEdit),
+    CodeActionKind (CodeActionQuickFix),
+    CodeAction (CodeAction),
+    List (List),
+    Range (Range),
+    Position (Position),
+    Uri )
 import Text.Regex.TDFA
-import Data.Maybe (listToMaybe)
 import qualified Data.HashMap.Strict as Map
 
+-- | Given a diagnostic returned by 'Ide.Plugin.Cabal.Diag.errorDiag',
+--   if it represents an "Unknown SPDX license identifier"-error along
+--   with a suggestion, then return a 'CodeAction' for replacing the
+--   the incorrect license identifier with the suggestion.
+licenseErrorAction
+  :: Uri
+  -- ^ File for which the diagnostic was generated
+  -> Diagnostic
+  -- ^ Output of 'Ide.Plugin.Cabal.Diag.errorDiag'
+  -> Maybe CodeAction
 licenseErrorAction uri diag =
-    case licenseErrorSuggestion diag of
-        Just (original, suggestion) ->
-            let
-                adjustRange (Range (Position line col) rangeTo) =
-                  Range (Position line (col - fromIntegral (T.length original))) rangeTo
-                title = "Replace with " <> suggestion
-                tedit = [TextEdit (adjustRange $ _range diag) (suggestion <> "\n")]
-                edit  = WorkspaceEdit (Just $ Map.singleton uri $ List tedit) Nothing Nothing
-            in [InR $ CodeAction title (Just CodeActionQuickFix) (Just $ List []) Nothing Nothing (Just edit) Nothing Nothing]
-        Nothing -> []
+  mkCodeAction <$> licenseErrorSuggestion diag
+  where
+    mkCodeAction (original, suggestion) =
+      let
+        -- The Cabal parser does not output the _range_ of the incorrect license identifier,
+        -- only a single source code position. Consequently, in 'Ide.Plugin.Cabal.Diag.errorDiag'
+        -- we define the range to be from the returned position the first column of the next line.
+        -- Since the "replace" code action replaces this range, we need to modify the range to
+        -- start at the first character of the invalid license identifier. We achieve this by
+        -- subtracting the length of the identifier from the beginning of the range.
+        adjustRange (Range (Position line col) rangeTo) =
+          Range (Position line (col - fromIntegral (T.length original))) rangeTo
+        title = "Replace with " <> suggestion
+        -- We must also add a newline character to the replacement since the range returned by
+        -- 'Ide.Plugin.Cabal.Diag.errorDiag' ends at the beginning of the following line.
+        tedit = [TextEdit (adjustRange $ _range diag) (suggestion <> "\n")]
+        edit  = WorkspaceEdit (Just $ Map.singleton uri $ List tedit) Nothing Nothing
+      in CodeAction title (Just CodeActionQuickFix) (Just $ List []) Nothing Nothing (Just edit) Nothing Nothing
 
--- | Given a diagnostic, if it represents an "Unknown SPDX license identifier"-error
--- then return the suggestion (after the "Do you mean"-text), if present.
-licenseErrorSuggestion :: Diagnostic -> Maybe (T.Text, T.Text)
+-- | Given a diagnostic returned by 'Ide.Plugin.Cabal.Diag.errorDiag',
+--   if it represents an "Unknown SPDX license identifier"-error along
+--   with a suggestion then return the suggestion (after the "Do you mean"-text)
+--   along with the incorrect identifier.
+licenseErrorSuggestion
+  :: Diagnostic
+  -- ^ Output of 'Ide.Plugin.Cabal.Diag.errorDiag'
+  -> Maybe (T.Text, T.Text)
+  -- ^ (Original (incorrect) license identifier, suggested replacement)
 licenseErrorSuggestion diag =
   mSuggestion (_message diag) >>= \case
     [original, suggestion] -> Just (original, suggestion)

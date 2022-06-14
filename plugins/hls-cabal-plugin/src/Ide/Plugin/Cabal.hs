@@ -24,11 +24,7 @@ import Control.DeepSeq (NFData)
 import           Data.Hashable
 import           Data.Typeable
 import qualified Development.IDE.Core.Shake as Shake
-
-
 import qualified Language.LSP.Types                    as LSP
-
--- import           Control.Concurrent.STM.Stats          (atomically)
 import           Control.Monad.Extra
 import Development.IDE.Core.Shake (restartShakeSession)
 import Control.Concurrent.STM
@@ -37,6 +33,7 @@ import qualified Data.ByteString as BS
 import qualified Data.Text.Encoding as Encoding
 import Language.LSP.Server (LspM)
 import Ide.Plugin.Config (Config)
+import Data.Maybe (catMaybes)
 
 data Log
   = LogText T.Text
@@ -44,7 +41,7 @@ data Log
 
 instance Pretty Log where
   pretty = \case
-    LogShake log -> pretty log
+    LogShake log' -> pretty log'
     LogText log' -> pretty log'
 
 descriptor :: Recorder (WithPriority Log) -> PluginId -> PluginDescriptor IdeState
@@ -59,17 +56,15 @@ descriptor recorder plId = (defaultCabalPluginDescriptor plId)
           join $ atomically $ Shake.recordDirtyKeys (shakeExtras ide) GetModificationTime [file]
           restartShakeSession (shakeExtras ide) (VFSModified vfs) (fromNormalizedFilePath file ++ " (opened)") [Shake.mkDelayedAction "cabal parse open" Info $ void $ use Example file]
           join $ Shake.shakeEnqueue (shakeExtras ide) $ Shake.mkDelayedAction "cabal parse modified" Info $ void $ use Example file
-          -- runAction "CabalParse" ide $ void $ use Example file
 
   , mkPluginNotificationHandler LSP.STextDocumentDidChange $
-      \ide vfs _ (DidChangeTextDocumentParams identifier@VersionedTextDocumentIdentifier{_uri} changes) -> liftIO $ do
+      \ide vfs _ (DidChangeTextDocumentParams VersionedTextDocumentIdentifier{_uri} _) -> liftIO $ do
       whenUriFile _uri $ \file -> do
         logDebug (ideLogger ide) $ "Modified text document: " <> getUri _uri
         logDebug (ideLogger ide) $ "VFS State: " <> T.pack (show vfs)
         join $ atomically $ Shake.recordDirtyKeys (shakeExtras ide) GetModificationTime [file]
         restartShakeSession (shakeExtras ide) (VFSModified vfs) (fromNormalizedFilePath file ++ " (modified)") [Shake.mkDelayedAction "cabal parse modified" Info $ void $ use Example file]
         join $ Shake.shakeEnqueue (shakeExtras ide) $ Shake.mkDelayedAction "cabal parse modified" Info $ void $ use Example file
-        -- runAction "CabalParse" ide $ void $ use Example file
 
   , mkPluginNotificationHandler LSP.STextDocumentDidSave $
       \ide vfs _ (DidSaveTextDocumentParams TextDocumentIdentifier{_uri} _) -> liftIO $ do
@@ -78,7 +73,6 @@ descriptor recorder plId = (defaultCabalPluginDescriptor plId)
           join $ atomically $ Shake.recordDirtyKeys (shakeExtras ide) GetModificationTime [file]
           restartShakeSession (shakeExtras ide) (VFSModified vfs) (fromNormalizedFilePath file ++ " (saved)") [Shake.mkDelayedAction "cabal parse saved" Info $ void $ use Example file]
           join $ Shake.shakeEnqueue (shakeExtras ide) $ Shake.mkDelayedAction "cabal parse modified" Info $ void $ use Example file
-          -- runAction "CabalParse" ide $ void $ use Example file
 
   , mkPluginNotificationHandler LSP.STextDocumentDidClose $
         \ide vfs _ (DidCloseTextDocumentParams TextDocumentIdentifier{_uri}) -> liftIO $ do
@@ -88,9 +82,7 @@ descriptor recorder plId = (defaultCabalPluginDescriptor plId)
               join $ atomically $ Shake.recordDirtyKeys (shakeExtras ide) GetModificationTime [file]
               restartShakeSession (shakeExtras ide) (VFSModified vfs) (fromNormalizedFilePath file ++ " (closed)") [Shake.mkDelayedAction "cabal parse closed" Info $ void $ use Example file]
               join $ Shake.shakeEnqueue (shakeExtras ide) $ Shake.mkDelayedAction "cabal parse modified" Info $ void $ use Example file
-              -- runAction "CabalParse" ide $ void $ use Example file
   ]
-
   }
   where
     whenUriFile :: Uri -> (NormalizedFilePath -> IO ()) -> IO ()
@@ -101,7 +93,7 @@ descriptor recorder plId = (defaultCabalPluginDescriptor plId)
       -> CodeActionParams
       -> LspM Config (Either ResponseError (ResponseResult 'TextDocumentCodeAction))
     licenseSuggest _ _ (CodeActionParams _ _ (TextDocumentIdentifier uri) _range CodeActionContext{_diagnostics=List diags}) =
-      pure $ Right $ List $ concatMap (LicenseSuggest.licenseErrorAction uri) diags
+      pure $ Right $ List $ catMaybes $ map (fmap InR . LicenseSuggest.licenseErrorAction uri) diags
 
 data Example = Example
     deriving (Eq, Show, Typeable, Generic)
@@ -131,6 +123,3 @@ exampleRules recorder = do
     return (diagLst, Just ())
   where
     log' = logWith recorder
-
-commandId' :: CommandId
-commandId' = "codelens.cabal.parse"
