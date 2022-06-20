@@ -37,7 +37,7 @@ library
     , stm
     , regex-tdfa
     -- BEGIN "Ide.Plugin.Cabal.Parse"
-    , Cabal == 3.6.2.0
+    , Cabal
     , bytestring
     , directory
     -- END
