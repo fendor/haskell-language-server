@@ -119,8 +119,8 @@ data PluginDescriptor (ideState :: *) =
                    , pluginNotificationHandlers :: PluginNotificationHandlers ideState
                    , pluginModifyDynflags :: DynFlagsModifications
                    , pluginCli            :: Maybe (ParserInfo (IdeCommand ideState))
-                   , pluginFileType       :: [T.Text] 
-                   -- ^ File extension of the files the plugin is responsible for.  
+                   , pluginFileType       :: [T.Text]
+                   -- ^ File extension of the files the plugin is responsible for.
                    --   The plugin is only allowed to handle files with these extensions
                    --   When writing handlers, etc. for this plugin it can be assumed that all handled files are of this type.
                    --   The file extension must have a leading '.'.
@@ -232,7 +232,7 @@ instance PluginRequestMethod TextDocumentCodeAction where
         | otherwise = False
 
 -- | Check whether the given plugin descriptor is responsible for the file with the given path.
---   Compares the file extension of the file at the given path with the file extension 
+--   Compares the file extension of the file at the given path with the file extension
 --   the plugin is responsible for.
 pluginResponsible :: Uri -> PluginDescriptor c -> Bool
 pluginResponsible uri pluginDesc
@@ -551,7 +551,7 @@ defaultPluginDescriptor plId =
     mempty
     mempty
     Nothing
-    [".hs", ".lhs"]
+    [".hs", ".lhs", ".hs-boot"]
 
 defaultCabalPluginDescriptor :: PluginId -> PluginDescriptor ideState
 defaultCabalPluginDescriptor plId =
