@@ -101,6 +101,12 @@ flag ignore-plugins-ghc-bounds
   default:     False
   manual:      True
 
+
+flag cabal
+  description: Enable cabal plugin
+  default:     True
+  manual:      True
+
 flag class
   description: Enable class plugin
   default:     True
@@ -229,6 +235,12 @@ common example-plugins
                  Ide.Plugin.Example2,
                  Ide.Plugin.ExampleCabal
 
+common cabal
+  if flag(cabal)
+    build-depends: hls-cabal-plugin ^>= 0.1
+    cpp-options: -Dcabal
+
+
 common class
   if flag(class)
     build-depends: hls-class-plugin ^>= 1.0
@@ -353,6 +365,7 @@ executable haskell-language-server
                     , pedantic
                     -- plugins
                     , example-plugins
+                    , cabal
                     , callHierarchy
                     , changeTypeSignature
                     , class

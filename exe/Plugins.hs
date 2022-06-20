@@ -24,6 +24,10 @@ import qualified Ide.Plugin.QualifyImportedNames   as QualifyImportedNames
 import qualified Ide.Plugin.CallHierarchy          as CallHierarchy
 #endif
 
+#if cabal
+import qualified Ide.Plugin.Cabal                  as Cabal
+#endif
+
 #if class
 import qualified Ide.Plugin.Class                  as Class
 #endif
@@ -130,6 +134,9 @@ idePlugins recorder includeExamples = pluginDescToIdePlugins allPlugins
                    then basePlugins ++ examplePlugins
                    else basePlugins
     basePlugins =
+#if cabal
+      Cabal.descriptor pluginRecorder  "cabal" :
+#endif
 #if pragmas
       Pragmas.descriptor  "pragmas" :
 #endif
