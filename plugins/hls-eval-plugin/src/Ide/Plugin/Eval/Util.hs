@@ -27,6 +27,7 @@ import qualified Data.Text                             as T
 import           Development.IDE                       (IdeState, Priority (..),
                                                         ideLogger, logPriority)
 import qualified Development.IDE.Core.PluginUtils      as PluginUtils
+import qualified Development.IDE.Core.Shake            as Shake
 import           Development.IDE.GHC.Compat.Outputable
 import           Development.IDE.GHC.Compat.Util       (MonadCatch, bagToList,
                                                         catch)
@@ -73,13 +74,15 @@ logLevel = Debug -- Info
 isLiterate :: FilePath -> Bool
 isLiterate x = takeExtension x `elem` [".lhs", ".lhs-boot"]
 
-response' :: ExceptT PluginError (LspM c) WorkspaceEdit -> ExceptT PluginError (LspM c) (Value |? Null)
-response' act = do
+response' :: IdeState -> ExceptT PluginError (LspM c) WorkspaceEdit -> ExceptT PluginError (LspM c) (Value |? Null)
+response' ide act = do
     res <-  ExceptT (runExceptT act
              `catchAny` \e -> do
                 res <- showErr e
                 pure . Left  . PluginInternalError $ fromString res)
-    _ <- lift $ sendRequest SMethod_WorkspaceApplyEdit (ApplyWorkspaceEditParams Nothing res) (\_ -> pure ())
+
+    let reqs = Shake.lspServerComms (Shake.shakeExtras ide)
+    _ <- lift $ Shake.sendRequest reqs SMethod_WorkspaceApplyEdit (ApplyWorkspaceEditParams Nothing res) (\_ -> pure ())
     pure $ InR Null
 
 gStrictTry :: (MonadIO m, MonadCatch m) => m b -> m (Either String b)

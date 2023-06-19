@@ -46,8 +46,10 @@ import           Data.Maybe                                   (catMaybes)
 import           Data.String                                  (IsString)
 import           Data.Text                                    (Text)
 import qualified Data.Text                                    as T
+import qualified Data.Text.Encoding                           as T
 import           Data.Typeable                                (Typeable)
 import           Development.IDE.Core.Rules                   (IdeState,
+                                                               getSourceFileSource,
                                                                runAction)
 import           Development.IDE.Core.RuleTypes               (LinkableResult (linkableHomeMod),
                                                                NeedsCompilation (NeedsCompilation),
@@ -134,6 +136,7 @@ import           Language.LSP.Protocol.Message
 import           Language.LSP.Protocol.Types
 import           Language.LSP.Server
 import           Language.LSP.VFS                             (virtualFileText)
+import Control.Monad.Trans.Class (lift)
 
 {- | Code Lens provider
  NOTE: Invoked every time the document is modified, not just when the document is saved.
@@ -216,15 +219,16 @@ runEvalCmd plId st EvalParams{..} =
             let TextDocumentIdentifier{_uri} = module_
             fp <- uriToFilePathE _uri
             let nfp = toNormalizedFilePath' fp
-            mdlText <- moduleText _uri
+            mdlText <- runActionE "eval.runEvalCmd.getSourceFileSource" st $ lift $ getSourceFileSource nfp
 
-            -- enable codegen for the module which we need to evaluate.
+                       -- enable codegen for the module which we need to evaluate.
             final_hscEnv <- liftIO $ bracket_
               (do queueForEvaluation st nfp
                   setSomethingModified VFSUnmodified st [toKey IsEvaluating nfp] "Eval")
               (do unqueueForEvaluation st nfp
                   setSomethingModified VFSUnmodified st [toKey IsEvaluating nfp] "Eval")
               (initialiseSessionForEval (needsQuickCheck tests) st nfp)
+
 
             evalCfg <- liftIO $ runAction "eval: config" st $ getEvalConfig plId
 
@@ -235,13 +239,13 @@ runEvalCmd plId st EvalParams{..} =
                         evalGhcEnv final_hscEnv $ do
                             runTests evalCfg (st, fp) tests
 
-            let workspaceEditsMap = Map.fromList [(_uri, addFinalReturn mdlText edits)]
+            let workspaceEditsMap = Map.fromList [(_uri, addFinalReturn (T.decodeUtf8Lenient mdlText) edits)]
             let workspaceEdits = WorkspaceEdit (Just workspaceEditsMap) Nothing Nothing
 
             return workspaceEdits
      in perf "evalCmd" $ ExceptT $
             withIndefiniteProgress "Evaluating" Cancellable $
-                runExceptT $ response' cmd
+                runExceptT $ response' st cmd
 
 -- | Create an HscEnv which is suitable for performing interactive evaluation.
 -- All necessary home modules will have linkables and the current module will
@@ -306,12 +310,6 @@ finalReturn txt =
         p = Position l c
      in TextEdit (Range p p) "\n"
 
-moduleText :: MonadLsp c m => Uri -> ExceptT PluginError m Text
-moduleText uri =
-    handleMaybeM (PluginInternalError "mdlText") $
-      (virtualFileText <$>)
-          <$> getVirtualFile
-              (toNormalizedUri uri)
 
 testsBySection :: [Section] -> [(Section, EvalId, Test)]
 testsBySection sections =

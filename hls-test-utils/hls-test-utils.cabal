@@ -27,8 +27,10 @@ source-repository head
 library
   exposed-modules:
     Test.Hls
-    Test.Hls.Util
     Test.Hls.FileSystem
+    Test.Hls.Server
+    Test.Hls.Types
+    Test.Hls.Util
 
   hs-source-dirs:   src
   build-depends:
@@ -39,6 +41,7 @@ library
     , bytestring
     , containers
     , data-default
+    , dependent-map
     , directory
     , extra
     , filepath
@@ -49,6 +52,8 @@ library
     , lsp                     ^>=2.3
     , lsp-test                ^>=0.16
     , lsp-types               ^>=2.1
+    , mtl
+    , stm
     , tasty
     , tasty-expected-failure
     , tasty-golden
@@ -56,6 +61,8 @@ library
     , tasty-rerun
     , temporary
     , text
+    , text-rope
+    , transformers
     , unordered-containers
     , row-types
   ghc-options:      -Wall

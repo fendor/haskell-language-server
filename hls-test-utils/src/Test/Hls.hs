@@ -14,7 +14,7 @@ module Test.Hls
     module Test.Tasty,
     module Test.Tasty.ExpectedFailure,
     module Test.Hls.Util,
-    module Language.LSP.Protocol.Types,
+    module J,
     module Language.LSP.Protocol.Message,
     module Language.LSP.Test,
     module Control.Monad.IO.Class,
@@ -70,15 +70,14 @@ import           Control.Concurrent.Async           (async, cancel, wait)
 import           Control.Concurrent.Extra
 import           Control.Exception.Base
 import           Control.Lens.Extras                (is)
-import           Control.Monad                      (guard, unless, void)
-import           Control.Monad.Extra                (forM)
+import           Control.Monad
 import           Control.Monad.IO.Class
-import           Data.Aeson                         (Result (Success),
-                                                     Value (Null), fromJSON,
-                                                     toJSON)
+import           Data.Aeson                         (Result (Success), Value,
+                                                     fromJSON, toJSON)
 import qualified Data.Aeson                         as A
 import           Data.ByteString.Lazy               (ByteString)
 import           Data.Default                       (def)
+import           Data.Either.Extra
 import qualified Data.Map                           as M
 import           Data.Maybe                         (fromMaybe)
 import           Data.Proxy                         (Proxy (Proxy))
@@ -108,7 +107,7 @@ import           Ide.Logger                         (Doc, Logger (Logger),
 import           Ide.Types
 import           Language.LSP.Protocol.Capabilities
 import           Language.LSP.Protocol.Message
-import           Language.LSP.Protocol.Types        hiding (Null)
+import           Language.LSP.Protocol.Types        as J
 import           Language.LSP.Test
 import           Prelude                            hiding (log)
 import           System.Directory                   (getCurrentDirectory,
@@ -656,9 +655,9 @@ waitForBuildQueue = do
     waitId <- sendRequest m (toJSON WaitForShakeQueue)
     (td, resp) <- duration $ skipManyTill anyMessage $ responseForId m waitId
     case resp of
-        TResponseMessage{_result=Right Null} -> return td
+        TResponseMessage{_result=Right A.Null} -> return td
         -- assume a ghcide binary lacking the WaitForShakeQueue method
-        _                                    -> return 0
+        _                                      -> return 0
 
 callTestPlugin :: (A.FromJSON b) => TestRequest -> Session (Either ResponseError b)
 callTestPlugin cmd = do

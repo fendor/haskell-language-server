@@ -27,7 +27,9 @@ module Ide.Types
 , defaultPluginPriority
 , IdeCommand(..)
 , IdeMethod(..)
+, IdeRequestMethod(..)
 , IdeNotification(..)
+, IdeServerToClientMethod(..)
 , IdePlugins(IdePlugins, ipMap)
 , DynFlagsModifications(..)
 , Config(..), PluginConfig(..), CheckParents(..)
@@ -39,6 +41,7 @@ module Ide.Types
 , PluginCommand(..), CommandId(..), CommandFunction, mkLspCommand, mkLspCmdId
 , PluginId(..)
 , PluginHandler(..), mkPluginHandler
+, PluginHandler'
 , PluginHandlers(..)
 , PluginMethod(..)
 , PluginMethodHandler
@@ -752,6 +755,18 @@ instance GEq IdeMethod where
 instance GCompare IdeMethod where
   gcompare (IdeMethod a) (IdeMethod b) = gcompare a b
 
+data IdeRequestMethod (m :: Method ServerToClient Request) = IdeRequestMethod (SMethod m)
+instance GEq IdeRequestMethod where
+  geq (IdeRequestMethod a) (IdeRequestMethod b) = geq a b
+instance GCompare IdeRequestMethod where
+  gcompare (IdeRequestMethod a) (IdeRequestMethod b) = gcompare a b
+
+data IdeServerToClientMethod (m :: Method ServerToClient t) = IdeServerToClientMethod (SMethod m)
+instance GEq IdeServerToClientMethod where
+  geq (IdeServerToClientMethod a) (IdeServerToClientMethod b) = geq a b
+instance GCompare IdeServerToClientMethod where
+  gcompare (IdeServerToClientMethod a) (IdeServerToClientMethod b) = gcompare a b
+
 -- | Methods which have a PluginMethod instance
 data IdeNotification (m :: Method ClientToServer Notification) = PluginNotificationMethod m => IdeNotification (SMethod m)
 instance GEq IdeNotification where
@@ -759,9 +774,12 @@ instance GEq IdeNotification where
 instance GCompare IdeNotification where
   gcompare (IdeNotification a) (IdeNotification b) = gcompare a b
 
--- | Combine handlers for the
 newtype PluginHandler a (m :: Method ClientToServer Request)
-  = PluginHandler (PluginId -> a -> MessageParams m -> LspM Config (NonEmpty (Either PluginError (MessageResult m))))
+  = PluginHandler (PluginId -> a -> PluginHandler' m)
+
+type PluginHandler' (m :: Method ClientToServer Request)
+  = MessageParams m -> LspM Config (NonEmpty (Either PluginError (MessageResult m)))
+
 
 newtype PluginNotificationHandler a (m :: Method ClientToServer Notification)
   = PluginNotificationHandler (PluginId -> a -> VFS -> MessageParams m -> LspM Config ())

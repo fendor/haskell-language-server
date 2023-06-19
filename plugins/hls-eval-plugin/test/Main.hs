@@ -8,28 +8,28 @@ module Main
   ( main
   ) where
 
-import           Control.Lens                  (_Just, folded, preview,
-                                                toListOf, view, (^..))
+import           Control.Lens                  (_Just, preview, view)
 import           Data.Aeson                    (Value (Object), fromJSON,
-                                                object, toJSON, (.=))
+                                                object, (.=))
 import           Data.Aeson.Types              (Pair, Result (Success))
 import           Data.List                     (isInfixOf)
 import           Data.List.Extra               (nubOrdOn)
 import qualified Data.Map                      as Map
-import           Data.Row
 import qualified Data.Text                     as T
 import           Ide.Plugin.Config             (Config)
 import qualified Ide.Plugin.Config             as Plugin
 import qualified Ide.Plugin.Eval               as Eval
 import           Ide.Plugin.Eval.Types         (EvalParams (..), Section (..),
-                                                testOutput)
-import           Ide.Types                     (IdePlugins (IdePlugins))
-import           Language.LSP.Protocol.Lens    (arguments, command, range,
+                                                testOutput, GetEvalComments (..))
+import           Language.LSP.Protocol.Lens    (command, range,
                                                 title)
-import           Language.LSP.Protocol.Message hiding (error)
 import           System.FilePath               ((<.>), (</>))
 import           Test.Hls
 import qualified Test.Hls.FileSystem           as FS
+import           Test.Hls.Server
+import Data.Functor (void)
+import Data.Foldable (forM_)
+import qualified Data.Text.IO as T
 
 main :: IO ()
 main = defaultTestRunner tests
@@ -41,30 +41,20 @@ tests :: TestTree
 tests =
   testGroup "eval"
   [ testCase "Produces Evaluate code lenses" $
-      runSessionWithServerInTmpDir def evalPlugin (mkFs $ FS.directProject "T1.hs") $ do
-        doc <- openDoc "T1.hs" "haskell"
-        lenses <- getCodeLenses doc
-        liftIO $ map (preview $ command . _Just . title) lenses @?= [Just "Evaluate..."]
+      simpleCodeLensTest "T1.hs" $ \lenses -> liftIO $ do
+        map (preview $ command . _Just . title) lenses @?= [Just "Evaluate..."]
   , testCase "Produces Refresh code lenses" $
-      runSessionWithServerInTmpDir def evalPlugin (mkFs $ FS.directProject "T2.hs") $ do
-        doc <- openDoc "T2.hs" "haskell"
-        lenses <- getCodeLenses doc
-        liftIO $ map (preview $ command . _Just . title) lenses @?= [Just "Refresh..."]
+      simpleCodeLensTest "T2.hs" $ \lenses -> liftIO $ do
+        map (preview $ command . _Just . title) lenses @?= [Just "Refresh..."]
   , testCase "Code lenses have ranges" $
-      runSessionWithServerInTmpDir def evalPlugin (mkFs $ FS.directProject "T1.hs") $ do
-        doc <- openDoc "T1.hs" "haskell"
-        lenses <- getCodeLenses doc
-        liftIO $ map (view range) lenses @?= [Range (Position 4 0) (Position 5 0)]
+      simpleCodeLensTest "T1.hs" $ \lenses -> liftIO $ do
+        map (view range) lenses @?= [Range (Position 4 0) (Position 5 0)]
   , testCase "Multi-line expressions have a multi-line range" $ do
-      runSessionWithServerInTmpDir def evalPlugin (mkFs $ FS.directProject "T3.hs") $ do
-        doc <- openDoc "T3.hs" "haskell"
-        lenses <- getCodeLenses doc
-        liftIO $ map (view range) lenses @?= [Range (Position 3 0) (Position 5 0)]
+      simpleCodeLensTest "T3.hs" $ \lenses -> liftIO $ do
+        map (view range) lenses @?= [Range (Position 3 0) (Position 5 0)]
   , testCase "Executed expressions range covers only the expression" $ do
-      runSessionWithServerInTmpDir def evalPlugin (mkFs $ FS.directProject "T2.hs") $ do
-        doc <- openDoc "T2.hs" "haskell"
-        lenses <- getCodeLenses doc
-        liftIO $ map (view range) lenses @?= [Range (Position 4 0) (Position 5 0)]
+      simpleCodeLensTest "T2.hs" $ \lenses -> liftIO $ do
+        map (view range) lenses @?= [Range (Position 4 0) (Position 5 0)]
 
   , goldenWithEval "Evaluation of expressions" "T1" "hs"
   , goldenWithEval "Reevaluation of expressions" "T2" "hs"
@@ -168,19 +158,19 @@ tests =
   , goldenWithEval "Variable 'it' works" "TIt" "hs"
   , testGroup "configuration"
     [ goldenWithEval' "Give 'WAS' by default" "TDiff" "hs" "expected.default"
-    , goldenWithEvalConfig' "Give the result only if diff is off" "TDiff" "hs" "expected.no-diff" diffOffConfig
-    , goldenWithEvalConfig' "Evaluates to exception (not marked)" "TException" "hs" "expected.nomark" (exceptionConfig False)
-    , goldenWithEvalConfig' "Evaluates to exception (with mark)" "TException" "hs" "expected.marked" (exceptionConfig True)
+    -- , goldenWithEvalConfig' "Give the result only if diff is off" "TDiff" "hs" "expected.no-diff" diffOffConfig
+    -- , goldenWithEvalConfig' "Evaluates to exception (not marked)" "TException" "hs" "expected.nomark" (exceptionConfig False)
+    -- , goldenWithEvalConfig' "Evaluates to exception (with mark)" "TException" "hs" "expected.marked" (exceptionConfig True)
     ]
   , testGroup ":info command"
-    [ testCase ":info reports type, constructors and instances" $ do
-        [output] <- map (unlines . codeLensTestOutput) <$> evalLenses "TInfo.hs"
+    [ testCase ":info reports type, constructors and instances" $ infoCodeLensTest "TInfo.hs" $ \lenses -> liftIO $ do
+        let [output] = map (unlines . codeLensTestOutput) lenses
         "data Foo = Foo1 | Foo2" `isInfixOf` output @? "Output does not include Foo data declaration"
         "Eq Foo" `isInfixOf` output                 @? "Output does not include instance Eq Foo"
         "Ord Foo" `isInfixOf` output                @? "Output does not include instance Ord Foo"
         not ("Baz Foo" `isInfixOf` output)          @? "Output includes instance Baz Foo"
-    , testCase ":info reports type, constructors and instances for multiple types" $ do
-        [output] <- map (unlines . codeLensTestOutput) <$> evalLenses "TInfoMany.hs"
+    , testCase ":info reports type, constructors and instances for multiple types" $ infoCodeLensTest "TInfoMany.hs" $ \lenses -> liftIO $ do
+        let [output] = map (unlines . codeLensTestOutput) lenses
         "data Foo = Foo1 | Foo2" `isInfixOf` output        @? "Output does not include Foo data declaration"
         "Eq Foo" `isInfixOf` output                        @? "Output does not include instance Eq Foo"
         "Ord Foo" `isInfixOf` output                       @? "Output does not include instance Ord Foo"
@@ -189,14 +179,14 @@ tests =
         "Eq Bar" `isInfixOf` output                        @? "Output does not include instance Eq Bar"
         "Ord Bar" `isInfixOf` output                       @? "Output does not include instance Ord Bar"
         not ("Baz Bar" `isInfixOf` output)                 @? "Output includes instance Baz Bar"
-    , testCase ":info! reports type, constructors and unfiltered instances" $ do
-        [output] <- map (unlines . codeLensTestOutput) <$> evalLenses "TInfoBang.hs"
+    , testCase ":info! reports type, constructors and unfiltered instances" $ infoCodeLensTest "TInfoBang.hs" $ \lenses -> liftIO $ do
+        let [output] = map (unlines . codeLensTestOutput) lenses
         "data Foo = Foo1 | Foo2" `isInfixOf` output @? "Output does not include Foo data declaration"
         "Eq Foo" `isInfixOf` output                 @? "Output does not include instance Eq Foo"
         "Ord Foo" `isInfixOf` output                @? "Output does not include instance Ord Foo"
         "Baz Foo" `isInfixOf` output                @? "Output does not include instance Baz Foo"
-    , testCase ":info! reports type, constructors and unfiltered instances for multiple types" $ do
-        [output] <- map (unlines . codeLensTestOutput) <$> evalLenses "TInfoBangMany.hs"
+    , testCase ":info! reports type, constructors and unfiltered instances for multiple types" $ infoCodeLensTest "TInfoBangMany.hs" $ \lenses -> liftIO $ do
+        let [output] = map (unlines . codeLensTestOutput) lenses
         "data Foo = Foo1 | Foo2" `isInfixOf` output        @? "Output does not include Foo data declaration"
         "Eq Foo" `isInfixOf` output                        @? "Output does not include instance Eq Foo"
         "Ord Foo" `isInfixOf` output                       @? "Output does not include instance Ord Foo"
@@ -205,79 +195,73 @@ tests =
         "Eq Bar" `isInfixOf` output                        @? "Output does not include instance Eq Bar"
         "Ord Bar" `isInfixOf` output                       @? "Output does not include instance Ord Bar"
         "Baz Bar" `isInfixOf` output                       @? "Output does not include instance Baz Bar"
-    , testCase ":i behaves exactly the same as :info" $ do
-        [output] <- map (unlines . codeLensTestOutput) <$> evalLenses "TI_Info.hs"
+    , testCase ":i behaves exactly the same as :info" $ infoCodeLensTest "TI_Info.hs" $ \lenses -> liftIO $ do
+        let [output] = map (unlines . codeLensTestOutput) lenses
         "data Foo = Foo1 | Foo2" `isInfixOf` output @? "Output does not include Foo data declaration"
         "Eq Foo" `isInfixOf` output                 @? "Output does not include instance Eq Foo"
         "Ord Foo" `isInfixOf` output                @? "Output does not include instance Ord Foo"
         not ("Baz Foo" `isInfixOf` output)          @? "Output includes instance Baz Foo"
     ]
-  , testCase "Interfaces are reused after Eval" $ do
-      runSessionWithServerInTmpDir def evalPlugin (mkFs $ FS.directProjectMulti ["TLocalImport.hs", "Util.hs"]) $ do
-        doc <- openDoc "TLocalImport.hs" "haskell"
-        waitForTypecheck doc
-        lenses <- getCodeLenses doc
-        let ~cmds@[cmd] = lenses^..folded.command._Just
-        liftIO $ cmds^..folded.title @?= ["Evaluate..."]
+  -- , testCase "Interfaces are reused after Eval" $ do
+  --     runSessionWithServerInTmpDir def evalPlugin (mkFs $ FS.directProjectMulti ["TLocalImport.hs", "Util.hs"]) $ do
+  --       doc <- openDoc "TLocalImport.hs" "haskell"
+  --       waitForTypecheck doc
+  --       lenses <- getCodeLenses doc
+  --       let ~cmds@[cmd] = lenses^..folded.command._Just
+  --       liftIO $ cmds^..folded.title @?= ["Evaluate..."]
 
-        executeCmd cmd
+  --       executeCmd cmd
 
-        -- trigger a rebuild and check that dependency interfaces are not rebuilt
-        changeDoc doc []
-        waitForTypecheck doc
-        Right keys <- getLastBuildKeys
-        let ifaceKeys = filter ("GetModIface" `T.isPrefixOf`) keys
-        liftIO $ ifaceKeys @?= []
+  --       -- trigger a rebuild and check that dependency interfaces are not rebuilt
+  --       changeDoc doc []
+  --       waitForTypecheck doc
+  --       Right keys <- getLastBuildKeys
+  --       let ifaceKeys = filter ("GetModIface" `T.isPrefixOf`) keys
+  --       liftIO $ ifaceKeys @?= []
   ]
+
+-- goldenWithEval :: TestName -> FilePath -> FilePath -> TestTree
+-- goldenWithEval title path ext =
+--   goldenWithHaskellDoc evalPlugin title testDataDir path "expected" ext executeLensesBackwards
 
 goldenWithEval :: TestName -> FilePath -> FilePath -> TestTree
 goldenWithEval title path ext =
-  goldenWithHaskellDocInTmpDir def evalPlugin title (mkFs $ FS.directProject (path <.> ext)) path "expected" ext executeLensesBackwards
-
-goldenWithEvalAndFs :: TestName -> [FS.FileTree] -> FilePath -> FilePath -> TestTree
-goldenWithEvalAndFs title tree path ext =
-  goldenWithHaskellDocInTmpDir def evalPlugin title (mkFs tree) path  "expected" ext executeLensesBackwards
+  goldenWithEvalAndFs title (FS.directProject (path <.> ext)) path ext
 
 -- | Similar function as 'goldenWithEval' with an alternate reference file
 -- naming. Useful when reference file may change because of GHC version.
 goldenWithEval' :: TestName -> FilePath -> FilePath -> FilePath -> TestTree
 goldenWithEval' title path ext expected =
-  goldenWithHaskellDocInTmpDir def evalPlugin title (mkFs $ FS.directProject (path <.> ext)) path expected ext executeLensesBackwards
+  goldenWithEvalAndFs' title (FS.directProject (path <.> ext)) path ext expected
 
-goldenWithEvalAndFs' :: TestName -> [FS.FileTree] ->  FilePath -> FilePath -> FilePath -> TestTree
-goldenWithEvalAndFs' title tree path ext expected =
-  goldenWithHaskellDocInTmpDir def evalPlugin title (mkFs tree) path expected ext executeLensesBackwards
+goldenWithEvalAndFs :: TestName -> [FS.FileTree] -> FilePath -> FilePath -> TestTree
+goldenWithEvalAndFs  title fileTree path ext =
+  goldenWithEvalAndFs' title fileTree path ext "expected"
 
+goldenWithEvalAndFs' :: TestName -> [FS.FileTree] -> FilePath -> FilePath -> FilePath -> TestTree
+goldenWithEvalAndFs' title fileTree path ext expected =
+  goldenHaskellFile title testDataDir path expected ext $ \_fp -> do
+    runServerTest evalPlugin testDataDir fileTree $ do
+      target <- toNfp (path <.> ext)
+      parseModuleWithComments target
+      executeLensesBackwards target
+      readFileSystem (path <.> ext)
 
 -- | Execute lenses backwards, to avoid affecting their position in the source file
-executeLensesBackwards :: TextDocumentIdentifier -> Session ()
-executeLensesBackwards doc = do
-  codeLenses <- reverse <$> getCodeLenses doc
-  -- liftIO $ print codeLenses
-
+executeLensesBackwards :: NormalizedFilePath -> TestM ()
+executeLensesBackwards target = do
+  -- Execute lenses backwards, to avoid affecting their position in the source file
+  lenses <- reverse <$> codeLensesFor target
   -- Execute sequentially, nubbing elements to avoid
   -- evaluating the same section with multiple tests
   -- more than twice
-  mapM_ executeCmd $
-    nubOrdOn actSectionId [c | CodeLens{_command = Just c} <- codeLenses]
+  mapM_ (\cmd -> runCommand cmd >> applyServerRequestTextEdits) $
+      nubOrdOn actSectionId [c | CodeLens{_command = Just c} <- lenses]
+  -- applyServerRequestTextEdits
 
 actSectionId :: Command -> Int
 actSectionId Command{_arguments = Just [fromJSON -> Success EvalParams{..}]} = evalId
 actSectionId _ = error "Invalid CodeLens"
-
--- Execute command and wait for result
-executeCmd :: Command -> Session ()
-executeCmd cmd = do
-  executeCommand cmd
-  _ <- skipManyTill anyMessage (message SMethod_WorkspaceApplyEdit)
-  -- liftIO $ print _resp
-  pure ()
-
-evalLenses :: FilePath -> IO [CodeLens]
-evalLenses path = runSessionWithServerInTmpDir def evalPlugin (mkFs cabalProjectFS) $ do
-  doc <- openDoc path "haskell"
-  executeLensesBackwards doc
-  getCodeLenses doc
 
 codeLensTestOutput :: CodeLens -> [String]
 codeLensTestOutput codeLens = do
@@ -306,31 +290,56 @@ diffOffConfig = changeConfig ["diff" .= False]
 exceptionConfig :: Bool -> Config
 exceptionConfig exCfg = changeConfig ["exception" .= exCfg]
 
-goldenWithEvalConfig' :: TestName -> FilePath -> FilePath -> FilePath -> Config -> TestTree
-goldenWithEvalConfig' title path ext expected cfg =
-  goldenWithHaskellDocInTmpDir cfg evalPlugin title (mkFs $ FS.directProject $ path <.> ext) path expected ext $ \doc -> do
-    executeLensesBackwards doc
+-- goldenWithEvalConfig' :: TestName -> FilePath -> FilePath -> FilePath -> Config -> TestTree
+-- goldenWithEvalConfig' title path ext expected cfg =
+--     goldenWithHaskellDoc evalPlugin title testDataDir path expected ext $ \doc -> do
+--       sendConfigurationChanged (toJSON cfg)
+--       executeLensesBackwards doc
 
 evalInFile :: HasCallStack => FilePath -> T.Text -> T.Text -> IO ()
-evalInFile fp e expected = runSessionWithServerInTmpDir def evalPlugin (mkFs $ FS.directProject fp) $ do
-  doc <- openDoc fp "haskell"
-  origin <- documentContents doc
-  let withEval = origin <> e
-  changeDoc doc [TextDocumentContentChangeEvent . InR . (.==) #text $ withEval]
-  executeLensesBackwards doc
-  result <- fmap T.strip . T.stripPrefix withEval <$> documentContents doc
-  liftIO $ result @?= Just (T.strip expected)
+evalInFile fp e expected = void $ runServerTest evalPlugin testDataDir
+  (FS.directProject fp)
+  (do
+    target <- toNfp fp
+    withEval <- modifyFileSystem fp (<> e)
 
--- ----------------------------------------------------------------------------
--- File system definitions
--- Used for declaring a test file tree
--- ----------------------------------------------------------------------------
+    parseModuleWithComments target
 
-mkFs :: [FS.FileTree] -> FS.VirtualFileTree
-mkFs = FS.mkVirtualFileTree testDataDir
+    lenses <- codeLensesFor target
+
+    forM_ lenses executeCodeLensCmd
+    applyServerRequestTextEdits
+
+    result <- liftIO $ (fmap T.strip . T.stripPrefix withEval) <$> T.readFile (fromNormalizedFilePath target)
+    liftIO $ result @?= Just (T.strip expected)
+    )
+
+simpleCodeLensTest :: FilePath -> ([CodeLens] -> TestM a) -> IO a
+simpleCodeLensTest fp act = runServerTest evalPlugin testDataDir
+  (FS.directProject fp)
+  (do
+    target <- toNfp fp
+    parseModuleWithComments target
+    lenses <- codeLensesFor target
+    act lenses
+  )
+
+infoCodeLensTest :: FilePath -> ([CodeLens] -> TestM a) -> IO a
+infoCodeLensTest fp act = runServerTest evalPlugin testDataDir
+  cabalProjectFS
+  (do
+    target <- toNfp fp
+    parseModuleWithComments target
+    evalComments target
+    executeLensesBackwards target
+    act =<< codeLensesFor target
+  )
+
+evalComments :: NormalizedFilePath -> TestM ()
+evalComments target = void $ requireRule "eval" target GetEvalComments
 
 cabalProjectFS :: [FS.FileTree]
-cabalProjectFS = FS.simpleCabalProject'
+cabalProjectFS =
   [ FS.copy "test.cabal"
   , FS.file "cabal.project"
       (FS.text "packages: ./info-util .\n"

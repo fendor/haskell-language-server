@@ -28,6 +28,7 @@
 module Development.IDE.Core.Shake(
     IdeState, shakeSessionInit, shakeExtras, shakeDb,
     ShakeExtras(..), getShakeExtras, getShakeExtrasRules,
+    LspServerRequests(..),
     KnownTargets, Target(..), toKnownFiles,
     IdeRule, IdeResult,
     GetModificationTime(GetModificationTime, GetModificationTime_, missingFileDiagnostics),
@@ -246,10 +247,21 @@ data HieDbWriter
 -- with (currently) retry functionality
 type IndexQueue = TQueue (((HieDb -> IO ()) -> IO ()) -> IO ())
 
+data LspServerRequests = LspServerRequests
+    { sendRequest ::
+            forall (m :: Method ServerToClient Request) f config.
+            (LSP.MonadLsp config f, A.ToJSON (MessageParams m))
+            => SServerMethod m
+            -> MessageParams m
+            -> (Either ResponseError (MessageResult m) -> f ())
+            -> f (LspId m)
+    }
+
 -- information we stash inside the shakeExtra field
 data ShakeExtras = ShakeExtras
     { --eventer :: LSP.FromServerMessage -> IO ()
      lspEnv :: Maybe (LSP.LanguageContextEnv Config)
+    ,lspServerComms :: LspServerRequests
     ,debouncer :: Debouncer NormalizedUri
     ,logger :: Logger
     ,idePlugins :: IdePlugins IdeState
@@ -627,6 +639,9 @@ shakeOpen recorder lspEnv defaultConfig idePlugins logger debouncer
         indexCompleted <- newTVarIO 0
         indexProgressToken <- newVar Nothing
         let hiedbWriter = HieDbWriter{..}
+        let lspServerComms = LspServerRequests
+                { sendRequest = LSP.sendRequest
+                }
         exportsMap <- newTVarIO mempty
         -- lazily initialize the exports map with the contents of the hiedb
         -- TODO: exceptions can be swallowed here?

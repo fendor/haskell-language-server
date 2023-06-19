@@ -1,4 +1,4 @@
 -- Support for property checking
-module TProperty where
+module TPropertyError where
 
 -- prop> \(l::[Bool]) -> head l

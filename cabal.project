@@ -1,5 +1,7 @@
 packages:
          ./
+         ../lsp/lsp
+         ../lsp/lsp-types
          ./hie-compat
          ./shake-bench
          ./hls-graph

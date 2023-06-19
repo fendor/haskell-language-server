@@ -10,6 +10,7 @@ module Development.IDE.Main
 ,defaultMain
 ,testing
 ,Log(..)
+,serverTestSession
 ) where
 
 import           Control.Concurrent.Extra                 (withNumCapabilities)
@@ -460,3 +461,35 @@ expandFiles = concatMapM $ \x -> do
             when (null files) $
                 fail $ "Couldn't find any .hs/.lhs files inside directory: " ++ x
             return files
+
+serverTestSession ::
+  Recorder (WithPriority Log) ->
+  Logger ->
+  IdePlugins IdeState ->
+  FilePath ->
+  (IdeState -> IO ()) ->
+  IO ()
+serverTestSession recorder logger plugin dir act = do
+  debouncer <- newAsyncDebouncer
+  sessionLoader <- loadSessionWithOptions (cmapWithPrio LogSession recorder) def dir
+  let
+      hlsPlugin = asGhcIdePlugin (cmapWithPrio LogPluginHLS recorder) plugin
+      def_options = (defaultIdeOptions sessionLoader)
+        { optCheckProject = pure True
+        , optCheckParents = pure NeverCheck
+        }
+      options = def_options
+              { optCheckParents = pure NeverCheck
+              , optCheckProject = pure False
+              , optModifyDynFlags = optModifyDynFlags def_options <> pluginModifyDynflags hlsPlugin
+              }
+      mRule = mainRule (cmapWithPrio LogRules recorder) def >> action kick
+      rules = mRule >> pluginRules hlsPlugin
+
+  dbLoc <- getHieDbLoc dir
+  runWithDb (cmapWithPrio LogSession recorder) dbLoc $ \hiedb hieChan -> do
+    ide <- initialise (cmapWithPrio LogService recorder) def plugin rules
+      Nothing logger debouncer options hiedb hieChan mempty
+    shakeSessionInit (cmapWithPrio LogShake recorder) ide
+    registerIdeConfiguration (shakeExtras ide) $ IdeConfiguration mempty (hashed Nothing)
+    act ide
