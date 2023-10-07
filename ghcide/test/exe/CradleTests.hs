@@ -41,7 +41,8 @@ tests = testGroup "cradle"
     ,testGroup "ignore-fatal" [ignoreFatalWarning]
     ,testGroup "loading" [loadCradleOnlyonce, retryFailedCradle]
     ,testGroup "multi"   [simpleMultiTest, simpleMultiTest2, simpleMultiTest3, simpleMultiDefTest]
-    ,testGroup "sub-directory"   [simpleSubDirectoryTest]
+    ,testGroup "sub-directory" [simpleSubDirectoryTest]
+    ,testGroup "regression"    [loadsMainModule]
     ]
 
 loadCradleOnlyonce :: TestTree
@@ -178,6 +179,11 @@ simpleMultiDefTest = testCase "simple-multi-def-test" $ runWithExtraFiles "multi
     checkDefs locs (pure [fooL])
     expectNoMoreDiagnostics 0.5
 
+loadsMainModule :: TestTree
+loadsMainModule = testCase "loads main-is module" $ runWithExtraFiles "hieBiosMainIs" $ \_ -> do
+  _ <- openDoc "Main.hs" "haskell"
+  expectDiagnostics
+    [("Main.hs", [(DiagnosticSeverity_Warning, (5, 0), "Top-level binding with no type signature")])]
 
 sessionDepsArePickedUp :: TestTree
 sessionDepsArePickedUp = testSession'
