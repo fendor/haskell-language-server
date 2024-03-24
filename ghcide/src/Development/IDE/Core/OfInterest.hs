@@ -45,7 +45,8 @@ import           Ide.Logger                               (Pretty (pretty),
                                                            Recorder,
                                                            WithPriority,
                                                            cmapWithPrio,
-                                                           logDebug)
+                                                           Priority(..),
+                                                           logWith)
 import qualified Language.LSP.Protocol.Message            as LSP
 import qualified Language.LSP.Server                      as LSP
 
@@ -110,16 +111,17 @@ addFileOfInterest state f v = do
         pure (new, (prev, new))
     when (prev /= Just v) $ do
         join $ atomically $ recordDirtyKeys (shakeExtras state) IsFileOfInterest [f]
-        logDebug (ideLogger state) $
-            "Set files of interest to: " <> T.pack (show files)
+        logWith (ideLogger state) Debug $
+            LogSetFilesOfInterest (HashMap.toList files)
+            -- "Set files of interest to: " <> T.pack (show files)
 
 deleteFileOfInterest :: IdeState -> NormalizedFilePath -> IO ()
 deleteFileOfInterest state f = do
     OfInterestVar var <- getIdeGlobalState state
     files <- modifyVar' var $ HashMap.delete f
     join $ atomically $ recordDirtyKeys (shakeExtras state) IsFileOfInterest [f]
-    logDebug (ideLogger state) $ "Set files of interest to: " <> T.pack (show files)
-
+    logWith (ideLogger state) Debug $
+        LogSetFilesOfInterest (HashMap.toList files)
 scheduleGarbageCollection :: IdeState -> IO ()
 scheduleGarbageCollection state = do
     GarbageCollectVar var <- getIdeGlobalState state

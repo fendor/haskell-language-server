@@ -140,6 +140,7 @@ data Log
   | LogLspStartDuration !Seconds
   | LogShouldRunSubset !Bool
   | LogSetInitialDynFlagsException !SomeException
+  | LogConfigurationChange T.Text
   | LogService Service.Log
   | LogShake Shake.Log
   | LogGhcIde GhcIde.Log
@@ -147,6 +148,7 @@ data Log
   | LogSession Session.Log
   | LogPluginHLS PluginHLS.Log
   | LogRules Rules.Log
+  | LogEkg EKG.Log
   deriving Show
 
 instance Pretty Log where
@@ -164,6 +166,7 @@ instance Pretty Log where
       "shouldRunSubset:" <+> pretty shouldRunSubset
     LogSetInitialDynFlagsException e ->
       "setInitialDynFlags:" <+> pretty (displayException e)
+    LogConfigurationChange msg -> "Configuration changed:" <+> pretty msg
     LogService msg -> pretty msg
     LogShake msg -> pretty msg
     LogGhcIde msg -> pretty msg
@@ -171,6 +174,7 @@ instance Pretty Log where
     LogSession msg -> pretty msg
     LogPluginHLS msg -> pretty msg
     LogRules msg -> pretty msg
+    LogEkg msg -> pretty msg
 
 data Command
     = Check [FilePath]  -- ^ Typecheck some paths and print diagnostics. Exit code is the number of failures
@@ -259,7 +263,7 @@ defaultArguments recorder logger plugins = Arguments
                 -- the language server tests without the redirection.
                 putStr " " >> hFlush stdout
                 return newStdout
-        , argsMonitoring = OpenTelemetry.monitoring <> EKG.monitoring logger 8999
+        , argsMonitoring = OpenTelemetry.monitoring <> EKG.monitoring (cmapWithPrio LogEkg recorder) 8999
         }
 
 
@@ -366,7 +370,7 @@ defaultMain recorder Arguments{..} = withHeapStats (cmapWithPrio LogHeapStats re
                     Nothing -> pure ()
                     Just ide -> liftIO $ do
                         let msg = T.pack $ show cfg
-                        logDebug (Shake.ideLogger ide) $ "Configuration changed: " <> msg
+                        logWith recorder Debug $ LogConfigurationChange msg
                         modifyClientSettings ide (const $ Just cfgObj)
                         setSomethingModified Shake.VFSUnmodified ide [toKey Rules.GetClientSettings emptyFilePath] "config change"
 

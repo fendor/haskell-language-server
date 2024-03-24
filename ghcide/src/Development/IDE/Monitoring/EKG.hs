@@ -1,21 +1,35 @@
 {-# LANGUAGE CPP #-}
-module Development.IDE.Monitoring.EKG(monitoring) where
+module Development.IDE.Monitoring.EKG(Log, monitoring) where
 
 import           Development.IDE.Types.Monitoring (Monitoring (..))
-import           Ide.Logger                       (Logger)
+import           Ide.Logger
 
 #ifdef MONITORING_EKG
 import           Control.Concurrent               (killThread)
 import           Control.Concurrent.Async         (async, waitCatch)
 import           Control.Monad                    (forM_)
 import           Data.Text                        (pack)
-import           Ide.Logger                       (logInfo)
+import           Ide.Logger                       (Pretty(..), logWith)
 import qualified System.Metrics                   as Monitoring
 import qualified System.Remote.Monitoring.Wai     as Monitoring
+#endif
 
+data Log
+    = LogServerStartup Int
+    | LogServerStop
+    | LogServerBindError Int String
+    deriving Show
+
+instance Pretty Log where
+    pretty = \case
+        LogServerStartup port -> "Started monitoring server on port" <+> viaShow port
+        LogServerStop -> "Stopping monitoring server"
+        LogServerBindError port e -> "Unable to bind monitoring server on port" <+> viaShow port <> ":" <+> pretty e
+
+#ifdef MONITORING_EKG
 -- | Monitoring using EKG
-monitoring :: Logger -> Int -> IO Monitoring
-monitoring logger port = do
+monitoring :: Recorder (WithPriority Log) -> Int -> IO Monitoring
+monitoring recorder port = do
     store <- Monitoring.newStore
     Monitoring.registerGcMetrics store
     let registerCounter name read = Monitoring.registerCounter name read store
@@ -28,22 +42,19 @@ monitoring logger port = do
                 mb_server <- async startServer >>= waitCatch
                 case mb_server of
                     Right s -> do
-                        logInfo logger $ pack $
-                            "Started monitoring server on port " <> show port
+                        logWith recorder Info $ LogServerStartup port
                         return $ Just s
                     Left e -> do
-                        logInfo logger $ pack $
-                            "Unable to bind monitoring server on port "
-                            <> show port <> ":" <> show e
+                        logWith recorder Info  $ LogServerBindError port (show e)
                         return Nothing
             return $ forM_ server $ \s -> do
-                logInfo logger "Stopping monitoring server"
+                logWith recorder Info LogServerStop
                 killThread $ Monitoring.serverThreadId s
     return $ Monitoring {..}
 
 #else
 
-monitoring :: Logger -> Int -> IO Monitoring
+monitoring :: Recorder (WithPriority Log) -> Int -> IO Monitoring
 monitoring _ _ = mempty
 
 #endif

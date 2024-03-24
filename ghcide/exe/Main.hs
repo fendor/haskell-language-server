@@ -53,12 +53,14 @@ data Log
   = LogIDEMain IDEMain.Log
   | LogRules Rules.Log
   | LogGhcIde GhcIde.Log
+  | LogEkg EKG.Log
 
 instance Pretty Log where
   pretty = \case
     LogIDEMain log -> pretty log
     LogRules log   -> pretty log
     LogGhcIde log  -> pretty log
+    LogEkg log     -> pretty log
 
 ghcideVersion :: IO String
 ghcideVersion = do
@@ -148,5 +150,5 @@ main = withTelemetryLogger $ \telemetryLogger -> do
                 , optRunSubset = not argsConservativeChangeTracking
                 , optVerifyCoreFile = argsVerifyCoreFile
                 }
-        , IDEMain.argsMonitoring = OpenTelemetry.monitoring <> EKG.monitoring logger argsMonitoringPort
+        , IDEMain.argsMonitoring = OpenTelemetry.monitoring <> EKG.monitoring (cmapWithPrio LogEkg recorder) argsMonitoringPort
         }

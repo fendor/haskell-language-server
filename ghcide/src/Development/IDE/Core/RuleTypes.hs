@@ -43,6 +43,7 @@ import           Development.IDE.Types.Diagnostics
 import           GHC.Serialized                               (Serialized)
 import           Language.LSP.Protocol.Types                  (Int32,
                                                                NormalizedFilePath)
+import Ide.Logger (Pretty(..), viaShow)
 
 data LinkableType = ObjectLinkable | BCOLinkable
   deriving (Eq,Ord,Show, Generic)
@@ -339,6 +340,9 @@ data FileOfInterestStatus
   deriving (Eq, Show, Typeable, Generic)
 instance Hashable FileOfInterestStatus
 instance NFData   FileOfInterestStatus
+
+instance Pretty FileOfInterestStatus where
+    pretty = viaShow
 
 data IsFileOfInterestResult = NotFOI | IsFOI FileOfInterestStatus
   deriving (Eq, Show, Typeable, Generic)
