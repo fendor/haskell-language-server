@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP                       #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# OPTIONS_GHC -Wno-orphans -Wno-unused-imports #-}
+{-# LANGUAGE RecordWildCards #-}
 
 -- |Debug utilities
 module Ide.Plugin.Eval.Util (
@@ -8,7 +9,8 @@ module Ide.Plugin.Eval.Util (
     isLiterate,
     response',
     gStrictTry,
-    logWith,
+    -- logWith,
+    prettyWarnings,
 ) where
 
 import           Control.Exception                     (SomeException, evaluate,
@@ -22,8 +24,7 @@ import           Data.Aeson                            (Value)
 import           Data.Bifunctor                        (second)
 import           Data.String                           (IsString (fromString))
 import qualified Data.Text                             as T
-import           Development.IDE                       (IdeState, Priority (..),
-                                                        ideLogger, logPriority)
+import           Development.IDE                       (IdeState, printOutputable)
 import qualified Development.IDE.Core.PluginUtils      as PluginUtils
 import           Development.IDE.GHC.Compat.Outputable
 import           Development.IDE.GHC.Compat.Util       (MonadCatch, bagToList,
@@ -40,33 +41,33 @@ import           Language.LSP.Server
 import           System.FilePath                       (takeExtension)
 import           System.Time.Extra                     (duration, showDuration)
 import           UnliftIO.Exception                    (catchAny)
+import Development.IDE.GHC.Compat.Core (Warn(..))
+import qualified Development.IDE.GHC.Compat.Core              as SrcLoc (HasSrcSpan (getLoc),
+                                                                         unLoc)
+import qualified System.Time.Extra as Extra
 
-timed :: MonadIO m => (t -> String -> m a) -> t -> m b -> m b
+timed :: MonadIO m => (t -> Extra.Seconds -> m a) -> t -> m b -> m b
 timed out name op = do
     (secs, r) <- duration op
-    _ <- out name (showDuration secs)
+    _ <- out name secs
     return r
 
 -- | Log using hie logger, reports source position of logging statement
-logWith :: (HasCallStack, MonadIO m, Show a1, Show a2) => IdeState -> a1 -> a2 -> m ()
-logWith state key val =
-    liftIO . logPriority (ideLogger state) logLevel $
-        T.unwords
-            [T.pack logWithPos, asT key, asT val]
-  where
-    logWithPos =
-        let stk = toList callStack
-            pr pos = concat [srcLocFile pos, ":", show . srcLocStartLine $ pos, ":", show . srcLocStartCol $ pos]
-         in case stk of
-              []    -> ""
-              (x:_) -> pr $ snd x
+-- logWith :: (HasCallStack, MonadIO m, Show a1, Show a2) => IdeState -> a1 -> a2 -> m ()
+-- logWith state key val =
+--     liftIO . logPriority undefined logLevel $
+--         T.unwords
+--             [T.pack logWithPos, asT key, asT val]
+--   where
+--     logWithPos =
+--         let stk = toList callStack
+--             pr pos = concat [srcLocFile pos, ":", show . srcLocStartLine $ pos, ":", show . srcLocStartCol $ pos]
+--          in case stk of
+--               []    -> ""
+--               (x:_) -> pr $ snd x
 
-    asT :: Show a => a -> T.Text
-    asT = T.pack . show
-
--- | Set to Info to see extensive debug info in hie log, set to Debug in production
-logLevel :: Priority
-logLevel = Debug -- Info
+--     asT :: Show a => a -> T.Text
+--     asT = T.pack . show
 
 isLiterate :: FilePath -> Bool
 isLiterate x = takeExtension x `elem` [".lhs", ".lhs-boot"]
@@ -109,3 +110,16 @@ showErr e =
     _ ->
 #endif
       return . show $ e
+
+#if MIN_VERSION_ghc(9,8,0)
+prettyWarnings :: Messages DriverMessage -> String
+prettyWarnings = printWithoutUniques . pprMessages (defaultDiagnosticOpts @DriverMessage)
+#else
+prettyWarnings :: [Warn] -> String
+prettyWarnings = unlines . map prettyWarn
+
+prettyWarn :: Warn -> String
+prettyWarn Warn{..} =
+    T.unpack (printOutputable $ SrcLoc.getLoc warnMsg) <> ": warning:\n"
+    <> "    " <> SrcLoc.unLoc warnMsg
+#endif

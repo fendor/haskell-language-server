@@ -2,11 +2,14 @@
 {-# LANGUAGE DerivingStrategies   #-}
 {-# LANGUAGE RecordWildCards      #-}
 {-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE OverloadedStrings    #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wwarn #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Ide.Plugin.Eval.Types
-    ( locate,
+    ( Log(..),
+      locate,
       locate0,
       Test (..),
       isProperty,
@@ -39,8 +42,65 @@ import           Data.String                   (IsString (..))
 import           Development.IDE               (Range, RuleResult)
 import           Development.IDE.Graph.Classes
 import           GHC.Generics                  (Generic)
-import           Language.LSP.Protocol.Types   (TextDocumentIdentifier)
+import           Language.LSP.Protocol.Types   (TextDocumentIdentifier, TextEdit)
 import qualified Text.Megaparsec               as P
+import qualified Data.Text as T
+import qualified System.Time.Extra as Extra
+import Ide.Logger
+import qualified Development.IDE.GHC.Compat.Core as Core
+import Ide.Plugin.Eval.GHC (showDynFlags)
+import Control.Lens
+import Control.Arrow ((>>>))
+import Ide.Plugin.Eval.Util
+import qualified Development.IDE.Core.Shake as Shake
+
+data Log
+    = LogShake Shake.Log
+    | LogCodeLensFp FilePath
+    | LogCodeLensComments Comments
+    | LogExecutionTime T.Text Extra.Seconds
+    | LogTests !Int !Int !Int !Int
+    | LogRunTestResults [T.Text]
+    | LogRunTestEdits TextEdit
+    | LogEvalFlags [String]
+    | LogEvalPreSetDynFlags Core.DynFlags
+    | LogEvalParsedFlags
+        (Either 
+            Core.GhcException 
+            (Core.DynFlags, [Core.Located String], [Core.Warn]))
+    | LogEvalPostSetDynFlags Core.DynFlags
+    | LogEvalStmtStart String
+    | LogEvalStmtResult (Maybe [T.Text])
+    | LogEvalImport String
+    | LogEvalDeclaration String
+
+instance Pretty Log where
+    pretty = \case
+        LogShake shakeLog -> pretty shakeLog
+        LogCodeLensFp fp -> "fp" <+> pretty fp
+        LogCodeLensComments comments -> "comments" <+> viaShow comments
+        LogExecutionTime lbl duration -> pretty lbl <> ":" <+> pretty (Extra.showDuration duration)
+        LogTests nTests nNonSetupSections nSetupSections nLenses -> "Tests" <+> fillSep
+            [ pretty nTests
+            , "tests in"
+            , pretty nNonSetupSections
+            , "sections"
+            , pretty nSetupSections
+            , "setups"
+            , pretty nLenses
+            , "lenses."
+            ] 
+        LogRunTestResults results ->  "TEST RESULTS" <+> viaShow results
+        LogRunTestEdits edits -> "TEST EDIT" <+> viaShow edits
+        LogEvalFlags flags -> "{:SET" <+> pretty flags
+        LogEvalPreSetDynFlags dynFlags -> "pre set" <+> pretty (showDynFlags dynFlags)
+        LogEvalParsedFlags eans -> "parsed flags" <+> viaShow (eans
+              <&> (_1 %~ showDynFlags >>> _3 %~ prettyWarnings))
+        LogEvalPostSetDynFlags dynFlags -> "post set" <+> pretty (showDynFlags dynFlags)
+        LogEvalStmtStart stmt -> "{STMT" <+> pretty stmt
+        LogEvalStmtResult result -> "STMT}" <+> pretty result
+        LogEvalImport stmt -> "{IMPORT" <+> pretty stmt
+        LogEvalDeclaration stmt -> "{DECL" <+> pretty stmt
 
 -- | A thing with a location attached.
 data Located l a = Located {location :: l, located :: a}
@@ -49,7 +109,7 @@ data Located l a = Located {location :: l, located :: a}
 -- | Discard location information.
 unLoc :: Located l a -> a
 unLoc (Located _ a) = a
-
+    
 instance (NFData l, NFData a) => NFData (Located l a) where
     rnf (Located loc a) = loc `deepseq` a `deepseq` ()
 
