@@ -30,14 +30,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ghc: ["9.10.1", "9.8.2", "9.6.6", "9.4.8"]
-        platform: [ { image: "debian:9"
-                    , installCmd: "sed -i s/deb.debian.org/archive.debian.org/g /etc/apt/sources.list && sed -i 's|security.debian.org|archive.debian.org/|g' /etc/apt/sources.list && sed -i /-updates/d /etc/apt/sources.list && apt-get update && apt-get install -y"
-                    , toolRequirements: "libnuma-dev zlib1g-dev libgmp-dev libgmp10 libssl-dev liblzma-dev libbz2-dev git wget lsb-release software-properties-common gnupg2 apt-transport-https gcc autoconf automake build-essential curl ghc gzip libffi-dev libncurses-dev libncurses5 libtinfo5 patchelf"
-                    , DISTRO: "Debian"
-                    , ARTIFACT: "x86_64-linux-deb9"
-                    , ADD_CABAL_ARGS: "--enable-split-sections"
-                    },
+        ghc: ["9.10.1", "9.8.3", "9.8.2", "9.6.6", "9.4.8"]
+        platform: [
+                    # See Note [Jobs on customer runners]
+                    # { image: "debian:9"
+                    # , installCmd: "sed -i s/deb.debian.org/archive.debian.org/g /etc/apt/sources.list && sed -i 's|security.debian.org|archive.debian.org/|g' /etc/apt/sources.list && sed -i /-updates/d /etc/apt/sources.list && apt-get update && apt-get install -y"
+                    # , toolRequirements: "libnuma-dev zlib1g-dev libgmp-dev libgmp10 libssl-dev liblzma-dev libbz2-dev git wget lsb-release software-properties-common gnupg2 apt-transport-https gcc autoconf automake build-essential curl ghc gzip libffi-dev libncurses-dev libncurses5 libtinfo5 patchelf"
+                    # , DISTRO: "Debian"
+                    # , ARTIFACT: "x86_64-linux-deb9"
+                    # , ADD_CABAL_ARGS: "--enable-split-sections"
+                    # },
                     { image: "debian:10"
                     , installCmd: "apt-get update && apt-get install -y"
                     , toolRequirements: "libnuma-dev zlib1g-dev libgmp-dev libgmp10 libssl-dev liblzma-dev libbz2-dev git wget lsb-release software-properties-common gnupg2 apt-transport-https gcc autoconf automake build-essential curl ghc gzip libffi-dev libncurses-dev libncurses5 libtinfo5 patchelf"
@@ -52,13 +54,14 @@ jobs:
                     , ARTIFACT: "x86_64-linux-deb11"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
                     },
-                    { image: "ubuntu:18.04"
-                    , installCmd: "apt-get update && apt-get install -y"
-                    , toolRequirements: "libnuma-dev zlib1g-dev libgmp-dev libgmp10 libssl-dev liblzma-dev libbz2-dev git wget lsb-release software-properties-common gnupg2 apt-transport-https gcc autoconf automake build-essential curl ghc gzip libffi-dev libncurses-dev libncurses5 libtinfo5 patchelf"
-                    , DISTRO: "Ubuntu"
-                    , ARTIFACT: "x86_64-linux-ubuntu18.04"
-                    , ADD_CABAL_ARGS: "--enable-split-sections"
-                    },
+                    # See Note [Jobs on customer runners]
+                    # { image: "ubuntu:18.04"
+                    # , installCmd: "apt-get update && apt-get install -y"
+                    # , toolRequirements: "libnuma-dev zlib1g-dev libgmp-dev libgmp10 libssl-dev liblzma-dev libbz2-dev git wget lsb-release software-properties-common gnupg2 apt-transport-https gcc autoconf automake build-essential curl ghc gzip libffi-dev libncurses-dev libncurses5 libtinfo5 patchelf"
+                    # , DISTRO: "Ubuntu"
+                    # , ARTIFACT: "x86_64-linux-ubuntu18.04"
+                    # , ADD_CABAL_ARGS: "--enable-split-sections"
+                    # },
                     { image: "ubuntu:20.04"
                     , installCmd: "apt-get update && apt-get install -y"
                     , toolRequirements: "libnuma-dev zlib1g-dev libgmp-dev libgmp10 libssl-dev liblzma-dev libbz2-dev git wget lsb-release software-properties-common gnupg2 apt-transport-https gcc autoconf automake build-essential curl ghc gzip libffi-dev libncurses-dev libncurses5 libtinfo5 patchelf"
@@ -73,13 +76,14 @@ jobs:
                     , ARTIFACT: "x86_64-linux-ubuntu22.04"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
                     },
-                    { image: "linuxmintd/mint19.3-amd64"
-                    , installCmd: "apt-get update && apt-get install -y"
-                    , toolRequirements: "libnuma-dev zlib1g-dev libgmp-dev libgmp10 libssl-dev liblzma-dev libbz2-dev git wget lsb-release software-properties-common gnupg2 apt-transport-https gcc autoconf automake build-essential curl ghc gzip libffi-dev libncurses-dev libncurses5 libtinfo5 patchelf"
-                    , DISTRO: "Mint"
-                    , ARTIFACT: "x86_64-linux-mint19.3"
-                    , ADD_CABAL_ARGS: "--enable-split-sections"
-                    },
+                    # See Note [Jobs on customer runners]
+                    # { image: "linuxmintd/mint19.3-amd64"
+                    # , installCmd: "apt-get update && apt-get install -y"
+                    # , toolRequirements: "libnuma-dev zlib1g-dev libgmp-dev libgmp10 libssl-dev liblzma-dev libbz2-dev git wget lsb-release software-properties-common gnupg2 apt-transport-https gcc autoconf automake build-essential curl ghc gzip libffi-dev libncurses-dev libncurses5 libtinfo5 patchelf"
+                    # , DISTRO: "Mint"
+                    # , ARTIFACT: "x86_64-linux-mint19.3"
+                    # , ADD_CABAL_ARGS: "--enable-split-sections"
+                    # },
                     { image: "linuxmintd/mint20.2-amd64"
                     , installCmd: "apt-get update && apt-get install -y"
                     , toolRequirements: "libnuma-dev zlib1g-dev libgmp-dev libgmp10 libssl-dev liblzma-dev libbz2-dev git wget lsb-release software-properties-common gnupg2 apt-transport-https gcc autoconf automake build-essential curl ghc gzip libffi-dev libncurses-dev libncurses5 libtinfo5 patchelf"
@@ -87,13 +91,14 @@ jobs:
                     , ARTIFACT: "x86_64-linux-mint20.2"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
                     },
-                    { image: "fedora:27"
-                    , installCmd: "dnf install -y"
-                    , toolRequirements: "autoconf automake binutils bzip2 coreutils curl elfutils-devel elfutils-libs findutils gcc gcc-c++ git gmp gmp-devel jq lbzip2 make ncurses ncurses-compat-libs ncurses-devel openssh-clients patch perl pxz python3 sqlite sudo wget which xz zlib-devel patchelf"
-                    , DISTRO: "Fedora"
-                    , ARTIFACT: "x86_64-linux-fedora27"
-                    , ADD_CABAL_ARGS: "--enable-split-sections"
-                    },
+                    # See Note [Jobs on customer runners]
+                    # { image: "fedora:27"
+                    # , installCmd: "dnf install -y"
+                    # , toolRequirements: "autoconf automake binutils bzip2 coreutils curl elfutils-devel elfutils-libs findutils gcc gcc-c++ git gmp gmp-devel jq lbzip2 make ncurses ncurses-compat-libs ncurses-devel openssh-clients patch perl pxz python3 sqlite sudo wget which xz zlib-devel patchelf"
+                    # , DISTRO: "Fedora"
+                    # , ARTIFACT: "x86_64-linux-fedora27"
+                    # , ADD_CABAL_ARGS: "--enable-split-sections"
+                    # },
                     { image: "fedora:33"
                     , installCmd: "dnf install -y"
                     , toolRequirements: "autoconf automake binutils bzip2 coreutils curl elfutils-devel elfutils-libs findutils gcc gcc-c++ git gmp gmp-devel jq lbzip2 make ncurses ncurses-compat-libs ncurses-devel openssh-clients patch perl pxz python3 sqlite sudo wget which xz zlib-devel patchelf"
@@ -101,13 +106,14 @@ jobs:
                     , ARTIFACT: "x86_64-linux-fedora33"
                     , ADD_CABAL_ARGS: "--enable-split-sections"
                     },
-                    { image: "centos:7"
-                    , installCmd: "sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-* && sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-* && yum -y install epel-release && yum install -y"
-                    , toolRequirements: "autoconf automake binutils bzip2 coreutils curl elfutils-devel elfutils-libs findutils gcc gcc-c++ git gmp gmp-devel jq lbzip2 make ncurses ncurses-compat-libs ncurses-devel openssh-clients patch perl pxz python3 sqlite sudo wget which xz zlib-devel patchelf"
-                    , DISTRO: "CentOS"
-                    , ARTIFACT: "x86_64-linux-centos7"
-                    , ADD_CABAL_ARGS: "--enable-split-sections"
-                    }
+                    # See Note [Jobs on customer runners]
+                    # { image: "centos:7"
+                    # , installCmd: "sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-* && sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-* && yum -y install epel-release && yum install -y"
+                    # , toolRequirements: "autoconf automake binutils bzip2 coreutils curl elfutils-devel elfutils-libs findutils gcc gcc-c++ git gmp gmp-devel jq lbzip2 make ncurses ncurses-compat-libs ncurses-devel openssh-clients patch perl pxz python3 sqlite sudo wget which xz zlib-devel patchelf"
+                    # , DISTRO: "CentOS"
+                    # , ARTIFACT: "x86_64-linux-centos7"
+                    # , ADD_CABAL_ARGS: "--enable-split-sections"
+                    # }
                   ]
         # TODO: rm
         # Instead of manually adding the Unknown Linux Bindist jobs here,
@@ -118,15 +124,16 @@ jobs:
         # Perhaps we can migrate *all* unknown linux builds to a uniform
         # image.
         include:
-          - ghc: 9.4.8
-            platform:
-              { image: "fedora:27"
-              , installCmd: "dnf install -y"
-              , toolRequirements: "autoconf automake binutils bzip2 coreutils curl elfutils-devel elfutils-libs findutils gcc gcc-c++ git gmp gmp-devel jq lbzip2 make ncurses ncurses-compat-libs ncurses-devel openssh-clients patch perl pxz python3 sqlite sudo wget which xz zlib-devel patchelf"
-              , DISTRO: "Unknown"
-              , ARTIFACT: "x86_64-linux-unknown"
-              , ADD_CABAL_ARGS: "--enable-split-sections"
-              }
+          # See Note [Jobs on customer runners]
+          # - ghc: 9.4.8
+          #   platform:
+          #     { image: "fedora:27"
+          #     , installCmd: "dnf install -y"
+          #     , toolRequirements: "autoconf automake binutils bzip2 coreutils curl elfutils-devel elfutils-libs findutils gcc gcc-c++ git gmp gmp-devel jq lbzip2 make ncurses ncurses-compat-libs ncurses-devel openssh-clients patch perl pxz python3 sqlite sudo wget which xz zlib-devel patchelf"
+          #     , DISTRO: "Unknown"
+          #     , ARTIFACT: "x86_64-linux-unknown"
+          #     , ADD_CABAL_ARGS: "--enable-split-sections"
+          #     }
           - ghc: 9.6.6
             platform:
               { image: "rockylinux:8"
@@ -191,6 +198,143 @@ jobs:
           path: |
             ./out-${{ matrix.platform.ARTIFACT }}-${{ matrix.ghc }}.tar
 
+  # Note [Jobs on customer runners]
+  # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  #
+  # These jobs have to be executed on a custom runner due to GitHub forcing a
+  # newer nodejs version: https://github.com/actions/checkout/issues/1809
+  #
+  # This whole issue is a huge rabbit hole where you can get lost.
+  # In short:
+  #
+  # * The actions/checkout@4 versions require the nodejs 20 version
+  # * Prebuilt nodejs 20 are linking against a newer GLIBC version
+  # * Even though jobs are executed in a docker image, some commands are from
+  #     the runner machine, (e.g. nodejs is from the ubuntu-latest runner).
+  # * Downgrading to actions/checkout@3 worked for some time.
+  #
+  # However, due to https://github.blog/changelog/2024-03-07-github-actions-all-actions-will-run-on-node20-instead-of-node16-by-default/
+  # it seems like we *have* to do something.
+  # Thus, we are running jobs for older distro images on a customer runner, provided by maerwald.
+  # In particular, when writing this message, the distro images that have be run on the custom runner are:
+  #
+  # * debian:9
+  # * ubuntu:18.04
+  # * mint:19.3
+  # * fedora:27
+  # * centos:7
+  build-linux-older-platforms:
+    name: Build linux binaries for old distros
+    ## We need the environment here, to have access to the `vars` context.
+    ## Allows us to specify: `CABAL_CACHE_DISABLE=yes`.
+    ## The environments can be seen in https://github.com/haskell/haskell-language-server/settings/environments
+    ## assuming you have the proper permissions.
+    environment: CI
+    runs-on: [self-hosted, Linux, X64, maerwald]
+    env:
+      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      S3_HOST: ${{ secrets.S3_HOST }}
+      TARBALL_EXT: tar.xz
+      ARCH: 64
+      DEBIAN_FRONTEND: noninteractive
+      TZ: Asia/Singapore
+    strategy:
+      fail-fast: false
+      matrix:
+        ghc: ["9.10.1", "9.8.3", "9.8.2", "9.6.6", "9.4.8"]
+        platform: [ { image: "debian:9"
+                    , installCmd: "sed -i s/deb.debian.org/archive.debian.org/g /etc/apt/sources.list && sed -i 's|security.debian.org|archive.debian.org/|g' /etc/apt/sources.list && sed -i /-updates/d /etc/apt/sources.list && apt-get update && apt-get install -y"
+                    , toolRequirements: "libnuma-dev zlib1g-dev libgmp-dev libgmp10 libssl-dev liblzma-dev libbz2-dev git wget lsb-release software-properties-common gnupg2 apt-transport-https gcc autoconf automake build-essential curl ghc gzip libffi-dev libncurses-dev libncurses5 libtinfo5 patchelf"
+                    , DISTRO: "Debian"
+                    , ARTIFACT: "x86_64-linux-deb9"
+                    , ADD_CABAL_ARGS: "--enable-split-sections"
+                    },
+                    { image: "ubuntu:18.04"
+                    , installCmd: "apt-get update && apt-get install -y"
+                    , toolRequirements: "libnuma-dev zlib1g-dev libgmp-dev libgmp10 libssl-dev liblzma-dev libbz2-dev git wget lsb-release software-properties-common gnupg2 apt-transport-https gcc autoconf automake build-essential curl ghc gzip libffi-dev libncurses-dev libncurses5 libtinfo5 patchelf"
+                    , DISTRO: "Ubuntu"
+                    , ARTIFACT: "x86_64-linux-ubuntu18.04"
+                    , ADD_CABAL_ARGS: "--enable-split-sections"
+                    },
+                    { image: "linuxmintd/mint19.3-amd64"
+                    , installCmd: "apt-get update && apt-get install -y"
+                    , toolRequirements: "libnuma-dev zlib1g-dev libgmp-dev libgmp10 libssl-dev liblzma-dev libbz2-dev git wget lsb-release software-properties-common gnupg2 apt-transport-https gcc autoconf automake build-essential curl ghc gzip libffi-dev libncurses-dev libncurses5 libtinfo5 patchelf"
+                    , DISTRO: "Mint"
+                    , ARTIFACT: "x86_64-linux-mint19.3"
+                    , ADD_CABAL_ARGS: "--enable-split-sections"
+                    },
+                    { image: "fedora:27"
+                    , installCmd: "dnf install -y"
+                    , toolRequirements: "autoconf automake binutils bzip2 coreutils curl elfutils-devel elfutils-libs findutils gcc gcc-c++ git gmp gmp-devel jq lbzip2 make ncurses ncurses-compat-libs ncurses-devel openssh-clients patch perl pxz python3 sqlite sudo wget which xz zlib-devel patchelf"
+                    , DISTRO: "Fedora"
+                    , ARTIFACT: "x86_64-linux-fedora27"
+                    , ADD_CABAL_ARGS: "--enable-split-sections"
+                    },
+                    { image: "centos:7"
+                    , installCmd: "sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-* && sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-* && yum -y install epel-release && yum install -y"
+                    , toolRequirements: "autoconf automake binutils bzip2 coreutils curl elfutils-devel elfutils-libs findutils gcc gcc-c++ git gmp gmp-devel jq lbzip2 make ncurses ncurses-compat-libs ncurses-devel openssh-clients patch perl pxz python3 sqlite sudo wget which xz zlib-devel patchelf"
+                    , DISTRO: "CentOS"
+                    , ARTIFACT: "x86_64-linux-centos7"
+                    , ADD_CABAL_ARGS: "--enable-split-sections"
+                    }
+                  ]
+        # TODO: rm
+        # Instead of manually adding the Unknown Linux Bindist jobs here,
+        # it should be part of the matrix above.
+        # However, due to GHC 9.4 shenanigans, we need some special logic.
+        # https://gitlab.haskell.org/ghc/ghc/-/issues/22268
+        #
+        # Perhaps we can migrate *all* unknown linux builds to a uniform
+        # image.
+        include:
+          - ghc: 9.4.8
+            platform:
+              { image: "fedora:27"
+              , installCmd: "dnf install -y"
+              , toolRequirements: "autoconf automake binutils bzip2 coreutils curl elfutils-devel elfutils-libs findutils gcc gcc-c++ git gmp gmp-devel jq lbzip2 make ncurses ncurses-compat-libs ncurses-devel openssh-clients patch perl pxz python3 sqlite sudo wget which xz zlib-devel patchelf"
+              , DISTRO: "Unknown"
+              , ARTIFACT: "x86_64-linux-unknown"
+              , ADD_CABAL_ARGS: "--enable-split-sections"
+              }
+    container:
+      image: ${{ matrix.platform.image }}
+    steps:
+      - name: Install requirements
+        shell: sh
+        run: |
+          ${{ matrix.platform.installCmd }} curl bash git ${{ matrix.platform.toolRequirements }}
+
+      - if: matrix.platform.DISTRO == 'Unknown'
+        run: |
+          echo "NAME=Linux" > /etc/os-release
+          echo "ID=linux" >> /etc/os-release
+          echo "PRETTY_NAME=Linux" >> /etc/os-release
+
+      - uses: actions/checkout@v3
+
+      - name: Run build
+        run: |
+          bash .github/scripts/build.sh
+          tar cf out-${ARTIFACT}-${GHC_VERSION}.tar out/ store/
+
+        env:
+          ARTIFACT: ${{ matrix.platform.ARTIFACT }}
+          DISTRO: ${{ matrix.platform.DISTRO }}
+          ADD_CABAL_ARGS: ${{ matrix.platform.ADD_CABAL_ARGS }}
+          GHC_VERSION: ${{ matrix.ghc }}
+
+      - if: always()
+        name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          if-no-files-found: error
+          retention-days: 2
+          name: artifacts-${{ matrix.platform.ARTIFACT }}
+          path: |
+            ./out-${{ matrix.platform.ARTIFACT }}-${{ matrix.ghc }}.tar
+
   build-arm:
     name: Build ARM binary
     ## We need the environment here, to have access to the `vars` context.
@@ -213,7 +357,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        ghc: ["9.10.1", "9.8.2", "9.6.6", "9.4.8"]
+        ghc: ["9.10.1", "9.8.3", "9.8.2", "9.6.6", "9.4.8"]
     steps:
       - uses: docker://arm64v8/ubuntu:focal
         name: Cleanup (aarch64 linux)
@@ -273,7 +417,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ghc: ["9.10.1", "9.8.2", "9.6.6", "9.4.8"]
+        ghc: ["9.10.1", "9.8.3", "9.8.2", "9.6.6", "9.4.8"]
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -318,7 +462,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ghc: ["9.10.1", "9.8.2", "9.6.6", "9.4.8"]
+        ghc: ["9.10.1", "9.8.3", "9.8.2", "9.6.6", "9.4.8"]
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -363,7 +507,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ghc: ["9.10.1", "9.8.2", "9.6.6", "9.4.8"]
+        ghc: ["9.10.1", "9.8.3", "9.8.2", "9.6.6", "9.4.8"]
     steps:
       - name: install windows deps
         shell: pwsh
@@ -399,7 +543,7 @@ jobs:
   bindist-linux:
     name: Tar linux bindists (linux)
     runs-on: [self-hosted, linux-space, maerwald]
-    needs: ["build-linux"]
+    needs: ["build-linux", "build-linux-older-platforms"]
     env:
       TARBALL_EXT: tar.xz
       ARCH: 64
