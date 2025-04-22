@@ -91,6 +91,7 @@ initialise recorder defaultConfig plugins mainRule lspEnv debouncer options with
         (do
             addIdeGlobal $ GlobalIdeOptions options
             ofInterestRules (cmapWithPrio LogOfInterest recorder)
+            cabalOfInterestRules (cmapWithPrio LogOfInterest recorder)
             fileExistsRules (cmapWithPrio LogFileExists recorder) lspEnv
             mainRule)
         rootDir

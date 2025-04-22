@@ -106,11 +106,13 @@ descriptor recorder plId = (defaultPluginDescriptor plId desc) { pluginNotificat
         -- filter out files of interest, since we already know all about those
         -- filter also uris that do not map to filenames, since we cannot handle them
         filesOfInterest <- getFilesOfInterest ide
+        cabalFilesOfInterst <- getCabalFilesOfInterest ide
         let fileEvents' =
                 [ (nfp, event) | (FileEvent uri event) <- fileEvents
                 , Just fp <- [uriToFilePath uri]
                 , let nfp = toNormalizedFilePath fp
                 , not $ HM.member nfp filesOfInterest
+                , not $ HM.member nfp cabalFilesOfInterst
                 ]
         unless (null fileEvents') $ do
             let msg = show fileEvents'

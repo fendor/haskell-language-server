@@ -7,13 +7,17 @@
 --   open in the editor. The rule is 'IsFileOfInterest'
 module Development.IDE.Core.OfInterest(
     ofInterestRules,
+    cabalOfInterestRules,
     getFilesOfInterest,
+    getCabalFilesOfInterest,
     getFilesOfInterestUntracked,
+    getCabalFilesOfInterestUntracked,
     addFileOfInterest,
     deleteFileOfInterest,
     setFilesOfInterest,
     kick, FileOfInterestStatus(..),
     OfInterestVar(..),
+    OfInterestCabalVar(..),
     scheduleGarbageCollection,
     Log(..)
     ) where
@@ -29,7 +33,6 @@ import           Development.IDE.Graph
 import           Control.Concurrent.STM.Stats             (atomically,
                                                            modifyTVar')
 import           Data.Aeson                               (toJSON)
-import qualified Data.Aeson                               as Aeson
 import qualified Data.ByteString                          as BS
 import           Data.Maybe                               (catMaybes)
 import           Development.IDE.Core.ProgressReporting
@@ -80,6 +83,39 @@ ofInterestRules recorder = do
     summarize (IsFOI (Modified False)) = BS.singleton 2
     summarize (IsFOI (Modified True))  = BS.singleton 3
 
+
+{- | Cabal files that are currently open in the lsp-client.
+Specific actions happen when these files are saved, closed or modified,
+such as generating diagnostics, re-parsing, etc...
+
+We need to store the open files to parse them again if we restart the shake session.
+Restarting of the shake session happens whenever these files are modified.
+-}
+newtype OfInterestCabalVar = OfInterestCabalVar (Var (HashMap NormalizedFilePath FileOfInterestStatus))
+
+instance Shake.IsIdeGlobal OfInterestCabalVar
+
+
+{- | The rule that initialises the files of interest state.
+
+Needs to be run on start-up.
+-}
+cabalOfInterestRules :: Recorder (WithPriority Log) -> Rules ()
+cabalOfInterestRules recorder = do
+  addIdeGlobal . OfInterestCabalVar =<< liftIO (newVar HashMap.empty)
+  defineEarlyCutoff (cmapWithPrio LogShake recorder) $ RuleNoDiagnostics $ \IsCabalFileOfInterest f -> do
+    alwaysRerun
+    filesOfInterest <- getCabalFilesOfInterestUntracked
+    let foi = maybe NotFOI IsFOI $ f `HashMap.lookup` filesOfInterest
+        fp = summarize foi
+        res = (Just fp, Just foi)
+    return res
+ where
+  summarize NotFOI                   = BS.singleton 0
+  summarize (IsFOI OnDisk)           = BS.singleton 1
+  summarize (IsFOI (Modified False)) = BS.singleton 2
+  summarize (IsFOI (Modified True))  = BS.singleton 3
+
 ------------------------------------------------------------
 newtype GarbageCollectVar = GarbageCollectVar (Var Bool)
 instance IsIdeGlobal GarbageCollectVar
@@ -92,6 +128,11 @@ getFilesOfInterest state = do
     OfInterestVar var <- getIdeGlobalState state
     readVar var
 
+getCabalFilesOfInterest :: IdeState -> IO (HashMap NormalizedFilePath FileOfInterestStatus)
+getCabalFilesOfInterest state = do
+  OfInterestCabalVar var <- getIdeGlobalState state
+  readVar var
+
 -- | Set the files-of-interest - not usually necessary or advisable.
 --   The LSP client will keep this information up to date.
 setFilesOfInterest :: IdeState -> HashMap NormalizedFilePath FileOfInterestStatus -> IO ()
@@ -103,6 +144,11 @@ getFilesOfInterestUntracked :: Action (HashMap NormalizedFilePath FileOfInterest
 getFilesOfInterestUntracked = do
     OfInterestVar var <- getIdeGlobalAction
     liftIO $ readVar var
+
+getCabalFilesOfInterestUntracked :: Action (HashMap NormalizedFilePath FileOfInterestStatus)
+getCabalFilesOfInterestUntracked = do
+  OfInterestCabalVar var <- Shake.getIdeGlobalAction
+  liftIO $ readVar var
 
 addFileOfInterest :: IdeState -> NormalizedFilePath -> FileOfInterestStatus -> IO [Key]
 addFileOfInterest state f v = do
@@ -124,6 +170,7 @@ deleteFileOfInterest state f = do
     logWith (ideLogger state) Debug $
         LogSetFilesOfInterest (HashMap.toList files)
     return [toKey IsFileOfInterest f]
+    
 scheduleGarbageCollection :: IdeState -> IO ()
 scheduleGarbageCollection state = do
     GarbageCollectVar var <- getIdeGlobalState state

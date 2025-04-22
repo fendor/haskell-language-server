@@ -7,14 +7,12 @@
 module Ide.Plugin.Cabal (descriptor, haskellInteractionDescriptor, Log (..)) where
 
 import           Control.Concurrent.Strict
-import           Control.DeepSeq
 import           Control.Lens                                  ((^.))
 import           Control.Monad.Extra
 import           Control.Monad.IO.Class
 import           Control.Monad.Trans.Class                     (lift)
 import           Control.Monad.Trans.Maybe                     (runMaybeT)
 import qualified Data.ByteString                               as BS
-import           Data.Hashable
 import           Data.HashMap.Strict                           (HashMap)
 import qualified Data.HashMap.Strict                           as HashMap
 import qualified Data.List                                     as List
@@ -30,11 +28,10 @@ import           Development.IDE.Core.FileStore                (getVersionedText
 import           Development.IDE.Core.PluginUtils
 import           Development.IDE.Core.Shake                    (restartShakeSession)
 import qualified Development.IDE.Core.Shake                    as Shake
-import           Development.IDE.Graph                         (Key,
-                                                                alwaysRerun)
+import           Development.IDE.Graph                         (Key)
 import           Development.IDE.LSP.HoverDefinition           (foundHover)
 import qualified Development.IDE.Plugin.Completions.Logic      as Ghcide
-import           Development.IDE.Types.Shake                   (toKey)
+import           Development.IDE.Types.Shake                   (toKey, toNoFileKey)
 import qualified Distribution.CabalSpecVersion                 as Cabal
 import qualified Distribution.Fields                           as Syntax
 import           Distribution.Package                          (Dependency)
@@ -44,7 +41,6 @@ import           Distribution.PackageDescription               (allBuildDepends,
 import           Distribution.PackageDescription.Configuration (flattenPackageDescription)
 import           Distribution.Parsec.Error
 import qualified Distribution.Parsec.Position                  as Syntax
-import           GHC.Generics
 import qualified Ide.Plugin.Cabal.CabalAdd                     as CabalAdd
 import           Ide.Plugin.Cabal.Completion.CabalFields       as CabalFields
 import qualified Ide.Plugin.Cabal.Completion.Completer.Types   as CompleterTypes
@@ -68,6 +64,7 @@ import qualified Language.LSP.Protocol.Message                 as LSP
 import           Language.LSP.Protocol.Types
 import qualified Language.LSP.VFS                              as VFS
 import           Text.Regex.TDFA
+import Development.IDE.Core.OfInterest (OfInterestCabalVar(..), getCabalFilesOfInterestUntracked)
 
 data Log
   = LogModificationTime NormalizedFilePath FileVersion
@@ -186,7 +183,7 @@ restartCabalShakeSession :: ShakeExtras -> VFS.VFS -> NormalizedFilePath -> Stri
 restartCabalShakeSession shakeExtras vfs file actionMsg actionBetweenSession = do
   restartShakeSession shakeExtras (VFSModified vfs) (fromNormalizedFilePath file ++ " " ++ actionMsg) [] $ do
     keys <- actionBetweenSession
-    return (toKey GetModificationTime file:keys)
+    return (toNoFileKey GhcSessionIO : toKey GetModificationTime file:keys)
 
 -- ----------------------------------------------------------------
 -- Plugin Rules
@@ -194,8 +191,6 @@ restartCabalShakeSession shakeExtras vfs file actionMsg actionBetweenSession = d
 
 cabalRules :: Recorder (WithPriority Log) -> PluginId -> Rules ()
 cabalRules recorder plId = do
-  -- Make sure we initialise the cabal files-of-interest.
-  ofInterestRules recorder
   -- Rule to produce diagnostics for cabal files.
   define (cmapWithPrio LogShake recorder) $ \ParseCabalFields file -> do
     config <- getPluginConfigAction plId
@@ -429,54 +424,6 @@ hover ide _ msgParam = do
 -- ----------------------------------------------------------------
 -- Cabal file of Interest rules and global variable
 -- ----------------------------------------------------------------
-
-{- | Cabal files that are currently open in the lsp-client.
-Specific actions happen when these files are saved, closed or modified,
-such as generating diagnostics, re-parsing, etc...
-
-We need to store the open files to parse them again if we restart the shake session.
-Restarting of the shake session happens whenever these files are modified.
--}
-newtype OfInterestCabalVar = OfInterestCabalVar (Var (HashMap NormalizedFilePath FileOfInterestStatus))
-
-instance Shake.IsIdeGlobal OfInterestCabalVar
-
-data IsCabalFileOfInterest = IsCabalFileOfInterest
-  deriving (Eq, Show, Generic)
-instance Hashable IsCabalFileOfInterest
-instance NFData IsCabalFileOfInterest
-
-type instance RuleResult IsCabalFileOfInterest = CabalFileOfInterestResult
-
-data CabalFileOfInterestResult = NotCabalFOI | IsCabalFOI FileOfInterestStatus
-  deriving (Eq, Show, Generic)
-instance Hashable CabalFileOfInterestResult
-instance NFData CabalFileOfInterestResult
-
-{- | The rule that initialises the files of interest state.
-
-Needs to be run on start-up.
--}
-ofInterestRules :: Recorder (WithPriority Log) -> Rules ()
-ofInterestRules recorder = do
-  Shake.addIdeGlobal . OfInterestCabalVar =<< liftIO (newVar HashMap.empty)
-  Shake.defineEarlyCutoff (cmapWithPrio LogShake recorder) $ RuleNoDiagnostics $ \IsCabalFileOfInterest f -> do
-    alwaysRerun
-    filesOfInterest <- getCabalFilesOfInterestUntracked
-    let foi = maybe NotCabalFOI IsCabalFOI $ f `HashMap.lookup` filesOfInterest
-        fp = summarize foi
-        res = (Just fp, Just foi)
-    return res
- where
-  summarize NotCabalFOI                   = BS.singleton 0
-  summarize (IsCabalFOI OnDisk)           = BS.singleton 1
-  summarize (IsCabalFOI (Modified False)) = BS.singleton 2
-  summarize (IsCabalFOI (Modified True))  = BS.singleton 3
-
-getCabalFilesOfInterestUntracked :: Action (HashMap NormalizedFilePath FileOfInterestStatus)
-getCabalFilesOfInterestUntracked = do
-  OfInterestCabalVar var <- Shake.getIdeGlobalAction
-  liftIO $ readVar var
 
 addFileOfInterest :: Recorder (WithPriority Log) -> IdeState -> NormalizedFilePath -> FileOfInterestStatus -> IO [Key]
 addFileOfInterest recorder state f v = do

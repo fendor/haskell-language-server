@@ -364,6 +364,8 @@ instance NFData   IsFileOfInterestResult
 
 type instance RuleResult IsFileOfInterest = IsFileOfInterestResult
 
+type instance RuleResult IsCabalFileOfInterest = IsFileOfInterestResult
+
 data ModSummaryResult = ModSummaryResult
   { msrModSummary  :: !ModSummary
   , msrImports     :: [LImportDecl GhcPs]
@@ -480,6 +482,11 @@ data IsFileOfInterest = IsFileOfInterest
     deriving (Eq, Show, Generic)
 instance Hashable IsFileOfInterest
 instance NFData   IsFileOfInterest
+
+data IsCabalFileOfInterest = IsCabalFileOfInterest
+    deriving (Eq, Show, Generic)
+instance Hashable IsCabalFileOfInterest
+instance NFData   IsCabalFileOfInterest
 
 data GetModSummaryWithoutTimestamps = GetModSummaryWithoutTimestamps
     deriving (Eq, Show, Generic)
