@@ -454,21 +454,35 @@ loadSessionWithOptions recorder SessionLoadingOptions{..} rootDir que = do
               } <- getIdeOptions
 
     let
-      typeCheckAndUpdateExportMap targetLocations = do
-        cfps' <- liftIO $ filterM (IO.doesFileExist . fromNormalizedFilePath) targetLocations
-        void $ shakeEnqueue extras $ mkDelayedAction "InitialLoad" Debug $ void $ do
-            mmt <- uses GetModificationTime cfps'
-            let cs_exist = catMaybes (zipWith (<$) cfps' mmt)
-            modIfaces <- uses GetModIface cs_exist
-            -- update exports map
-            shakeExtras <- getShakeExtras
-            let !exportsMap' = createExportsMap $ mapMaybe (fmap hirModIface) modIfaces
-            liftIO $ atomically $ modifyTVar' (exportsMap shakeExtras) (exportsMap' <>)
+      applySessionChange = \case
+        AddNewComponent hieYaml this_flags_map all_targets -> do
+          void $ modifyVar' fileToFlags $ Map.insert hieYaml this_flags_map
+          void $ modifyVar' filesMap $ flip HM.union (HM.fromList (map ((,hieYaml) . fst) $ concatMap toFlagsMap all_targets))
+        FailedToLoad hieYaml ncfp emptyHscEnvEqResult dep_info -> do
+          void $ modifyVar' fileToFlags $
+                Map.insertWith HM.union hieYaml (HM.singleton ncfp (emptyHscEnvEqResult, dep_info))
+          void $ modifyVar' filesMap $ HM.insert ncfp hieYaml
+        OutOfDateDependencies hieYaml -> do
+          -- If the dependencies are out of date then clear both caches and start
+          -- again.
+          modifyVar_ fileToFlags (const (return Map.empty))
+          modifyVar_ filesMap (const (return HM.empty))
+          -- Keep the same name cache
+          modifyVar_ hscEnvs (return . Map.adjust (const []) hieYaml )
+        SessionLoadingStyleChanged -> do
+          logWith recorder Info LogSessionLoadingChanged
+          -- If the dependencies are out of date then clear both caches and start
+          -- again.
+          modifyVar_ fileToFlags (const (return Map.empty))
+          modifyVar_ filesMap (const (return HM.empty))
+          -- Don't even keep the name cache, we start from scratch here!
+          modifyVar_ hscEnvs (const (return Map.empty))
 
     let session :: (Maybe FilePath, NormalizedFilePath, ComponentOptions, FilePath)
-                -> IO (IdeResult HscEnvEq,[FilePath])
-        session args@(hieYaml, cfp, _opts, libdir) = do
-          (new_deps, old_deps) <- packageSetup recorder rootDir hscEnvs ideNc getCacheDirs args
+                -> IO ((IdeResult HscEnvEq,[FilePath]), [SessionChange])
+        session (hieYaml, cfp, opts, libdir) = do
+          let initHscEnv = emptyHscEnv ideNc libdir
+          (new_deps, old_deps) <- packageSetup recorder rootDir hscEnvs initHscEnv getCacheDirs (hieYaml, cfp, opts)
 
           -- For each component, now make a new HscEnvEq which contains the
           -- HscEnv for the hie.yaml file but the DynFlags for that component
@@ -478,10 +492,9 @@ loadSessionWithOptions recorder SessionLoadingOptions{..} rootDir que = do
           let new_cache = newComponentCache recorder optExtensions cfp hscEnv
           all_target_details <- new_cache old_deps new_deps
 
-          (all_targets, this_flags_map, this_options) <- initTargetDetails (concat all_target_details) hieYaml cfp
+          (all_targets, this_flags_map, this_options) <-
+            initTargetDetails (concat all_target_details) hieYaml cfp
 
-          void $ modifyVar' fileToFlags $ Map.insert hieYaml this_flags_map
-          void $ modifyVar' filesMap $ flip HM.union (HM.fromList (map ((,hieYaml) . fst) $ concatMap toFlagsMap all_targets))
           -- The VFS doesn't change on cradle edits, re-use the old one.
           -- Invalidate all the existing GhcSession build nodes by restarting the Shake session
           keys2 <- invalidateShakeCache
@@ -492,14 +505,15 @@ loadSessionWithOptions recorder SessionLoadingOptions{..} rootDir que = do
           -- Typecheck all files in the project on startup
           checkProject <- optCheckProject
           when (not (null new_deps) && checkProject) $
-            typeCheckAndUpdateExportMap (concatMap targetLocations all_targets)
+            typeCheckAndUpdateExportMap extras (concatMap targetLocations all_targets)
 
-          return $ second Map.keys this_options
+          return (second Map.keys this_options, [AddNewComponent hieYaml this_flags_map all_targets])
 
-    let consultCradle :: Maybe FilePath -> FilePath -> IO (IdeResult HscEnvEq, [FilePath])
+    let consultCradle :: Maybe FilePath -> FilePath -> IO ((IdeResult HscEnvEq, [FilePath]), [SessionChange])
         consultCradle hieYaml cfp = do
+          old_cradle_files <- readIORef cradle_files
           cradle <- loadCradleWithNotification recorder optTesting lspEnv loadCradle rootDir hieYaml cfp
-          eopts <- loadComponentOptionsWithNotification recorder (sessionLoading clientConfig) lspEnv cradle_files cradle  cfp
+          eopts <- loadComponentOptionsWithNotification recorder (sessionLoading clientConfig) lspEnv old_cradle_files cradle cfp
           logWith recorder Debug $ LogSessionLoadingResult eopts
           case eopts of
             -- The cradle gave us some options so get to work turning them
@@ -512,47 +526,52 @@ loadSessionWithOptions recorder SessionLoadingOptions{..} rootDir que = do
                   | compileTime == runTime -> do
                     atomicModifyIORef' cradle_files (\xs -> (cfp:xs,()))
                     session (hieYaml, toNormalizedFilePath' cfp, opts, libDir)
-                  | otherwise -> return (([renderPackageSetupException cfp GhcVersionMismatch{..}], Nothing),[])
+                  | otherwise ->
+                    return
+                      ( ( ([renderPackageSetupException cfp GhcVersionMismatch{..}], Nothing)
+                        , []
+                        )
+                      , []
+                      )
             -- Failure case, either a cradle error or the none cradle
             Left err -> do
               dep_info <- getDependencyInfo (maybeToList hieYaml)
               let ncfp = toNormalizedFilePath' cfp
-              let res = (map (\err' -> Diags.renderCradleError err' cradle ncfp) err, Nothing)
-              void $ modifyVar' fileToFlags $
-                   Map.insertWith HM.union hieYaml (HM.singleton ncfp (res, dep_info))
-              void $ modifyVar' filesMap $ HM.insert ncfp hieYaml
-              return (res, maybe [] pure hieYaml ++ concatMap cradleErrorDependencies err)
+              let emptyHscEnvEqResult = (map (\err' -> Diags.renderCradleError err' cradle ncfp) err, Nothing)
+              return ( ( emptyHscEnvEqResult
+                       , maybe [] pure hieYaml ++ concatMap cradleErrorDependencies err
+                       )
+                     , [ FailedToLoad hieYaml ncfp emptyHscEnvEqResult dep_info
+                       ]
+                     )
 
     -- This caches the mapping from hie.yaml + Mod.hs -> [String]
     -- Returns the Ghc session and the cradle dependencies
     let sessionOpts :: (Maybe FilePath, FilePath)
                     -> IO (IdeResult HscEnvEq, [FilePath])
         sessionOpts (hieYaml, file) = do
-          Extra.whenM (didSessionLoadingPreferenceConfigChange biosSessionLoadingVar (sessionLoading clientConfig)) $ do
-            logWith recorder Info LogSessionLoadingChanged
-            -- If the dependencies are out of date then clear both caches and start
-            -- again.
-            modifyVar_ fileToFlags (const (return Map.empty))
-            modifyVar_ filesMap (const (return HM.empty))
-            -- Don't even keep the name cache, we start from scratch here!
-            modifyVar_ hscEnvs (const (return Map.empty))
+          sessionChanged <-
+            didSessionLoadingPreferenceConfigChange biosSessionLoadingVar (sessionLoading clientConfig)
+
+          when sessionChanged $
+            applySessionChange SessionLoadingStyleChanged
 
           v <- Map.findWithDefault HM.empty hieYaml <$> readVar fileToFlags
           let cfp = toAbsolutePath file
-          case HM.lookup (toNormalizedFilePath' cfp) v of
+          (res, sessionUpdates) <- case HM.lookup (toNormalizedFilePath' cfp) v of
             Just (opts, old_di) -> do
               deps_ok <- checkDependencyInfo old_di
               if not deps_ok
                 then do
-                  -- If the dependencies are out of date then clear both caches and start
-                  -- again.
-                  modifyVar_ fileToFlags (const (return Map.empty))
-                  modifyVar_ filesMap (const (return HM.empty))
-                  -- Keep the same name cache
-                  modifyVar_ hscEnvs (return . Map.adjust (const []) hieYaml )
-                  consultCradle hieYaml cfp
-                else return (opts, Map.keys old_di)
-            Nothing -> consultCradle hieYaml cfp
+                  (res, changes) <- consultCradle hieYaml cfp
+                  pure (res, OutOfDateDependencies hieYaml : changes)
+                else do
+                  return ((opts, Map.keys old_di), [])
+            Nothing -> do
+              consultCradle hieYaml cfp
+
+          mapM_ applySessionChange sessionUpdates
+          pure res
 
     -- The main function which gets options for a file. We only want one of these running
     -- at a time. Therefore the IORef contains the currently running cradle, if we try
@@ -569,6 +588,34 @@ loadSessionWithOptions recorder SessionLoadingOptions{..} rootDir que = do
     returnWithVersion $ \file -> do
       -- see Note [Serializing runs in separate thread]
       awaitRunInThread que $ getOptions file
+  where
+    typeCheckAndUpdateExportMap extras targetLocations = do
+      cfps' <- liftIO $ filterM (IO.doesFileExist . fromNormalizedFilePath) targetLocations
+      void $ shakeEnqueue extras $ mkDelayedAction "InitialLoad" Debug $ void $ do
+          mmt <- uses GetModificationTime cfps'
+          let cs_exist = catMaybes (zipWith (<$) cfps' mmt)
+          modIfaces <- uses GetModIface cs_exist
+          -- update exports map
+          shakeExtras <- getShakeExtras
+          let !exportsMap' = createExportsMap $ mapMaybe (fmap hirModIface) modIfaces
+          liftIO $ atomically $ modifyTVar' (exportsMap shakeExtras) (exportsMap' <>)
+
+-- | Instead of sprinkling 'modifyVar_' etc,... all over the session initilisation logic,
+-- we pool the set of possible changes to our session initilisation global variables.
+data SessionChange
+  = AddNewComponent
+    -- ^ One or more new components are added to the session.
+      (Maybe FilePath)
+      -- ^ Path to @hie.yaml@ file if any.
+      (HashMap NormalizedFilePath (IdeResult HscEnvEq, DependencyInfo))
+      -- ^ All loaded modules
+      [TargetDetails]
+      -- ^ New target details of the components that have just been added to the session.
+  | FailedToLoad (Maybe FilePath) NormalizedFilePath ([FileDiagnostic], Maybe HscEnvEq) DependencyInfo
+  | OutOfDateDependencies (Maybe FilePath)
+  | SessionLoadingStyleChanged
+
+
 
 loadCradleWithNotification ::
   Recorder (WithPriority Log) ->
@@ -589,8 +636,15 @@ loadCradleWithNotification recorder (IdeTesting testing) lspEnv loadCradle rootD
     sendNotification (SMethod_CustomMethod (Proxy @"ghcide/cradle/loaded")) (toJSON cfp)
   pure cradle
 
-loadComponentOptionsWithNotification :: Recorder (WithPriority Log) -> SessionLoadingPreferenceConfig -> Maybe (LanguageContextEnv c) -> IORef [FilePath] -> Cradle Void -> FilePath -> IO (Either [CradleError] (ComponentOptions, FilePath, String))
-loadComponentOptionsWithNotification recorder loadingOpt lspEnv cradle_files cradle cfp = do
+loadComponentOptionsWithNotification ::
+  Recorder (WithPriority Log) ->
+  SessionLoadingPreferenceConfig ->
+  Maybe (LanguageContextEnv c) ->
+  [FilePath] ->
+  Cradle Void ->
+  FilePath ->
+  IO (Either [CradleError] (ComponentOptions, FilePath, String))
+loadComponentOptionsWithNotification recorder loadingOpt lspEnv old_files cradle cfp = do
   let lfpLog = cradleRootDir cradle
   -- Display a user friendly progress message here: They probably don't know what a cradle is
   let progMsg = "Setting up " <> T.pack (takeBaseName (cradleRootDir cradle))
@@ -598,7 +652,6 @@ loadComponentOptionsWithNotification recorder loadingOpt lspEnv cradle_files cra
   mRunLspTCallback lspEnv (\act -> withIndefiniteProgress progMsg Nothing NotCancellable (const act)) $
     withTrace "Load cradle" $ \addTag -> do
       addTag "file" lfpLog
-      old_files <- readIORef cradle_files
       res <- cradleToOptsAndLibDir recorder loadingOpt cradle cfp old_files
       addTag "result" (show res)
       return res
@@ -613,15 +666,15 @@ initTargetDetails ::
     , (IdeResult HscEnvEq, DependencyInfo)
     )
 initTargetDetails all_target_details hieYaml cfp  = do
-  this_dep_info <- getDependencyInfo $ maybeToList hieYaml
+  this_yaml_dep_info <- getDependencyInfo $ maybeToList hieYaml
   let (all_targets, this_flags_map, this_options)
         = case HM.lookup cfp flags_map' of
             Just this -> (all_target_details, flags_map', this)
             Nothing -> (this_target_details : all_target_details, HM.insert cfp this_flags flags_map', this_flags)
           where
                 flags_map' = HM.fromList (concatMap toFlagsMap all_target_details)
-                this_target_details = TargetDetails (TargetFile cfp) this_error_env this_dep_info [cfp]
-                this_flags = (this_error_env, this_dep_info)
+                this_target_details = TargetDetails (TargetFile cfp) this_error_env this_yaml_dep_info [cfp]
+                this_flags = (this_error_env, this_yaml_dep_info)
                 this_error_env = ([Diags.unknownTargetError cfp], Nothing)
 
   pure (all_targets, this_flags_map, this_options)
@@ -648,13 +701,13 @@ packageSetup ::
   Recorder (WithPriority Log) ->
   FilePath ->
   Var (Map.Map (Maybe FilePath) [RawComponentInfo]) ->
-  NameCache ->
+  IO HscEnv ->
   (String -> [String] -> IO CacheDirs) ->
-  (Maybe FilePath, NormalizedFilePath, ComponentOptions, FilePath) ->
+  (Maybe FilePath, NormalizedFilePath, ComponentOptions) ->
   IO ([ComponentInfo], [ComponentInfo])
-packageSetup recorder rootDir hscEnvs ideNc getCacheDirs (hieYaml, cfp, opts, libDir) = do
+packageSetup recorder rootDir hscEnvs initEmptyHscEnv getCacheDirs (hieYaml, cfp, opts) = do
   -- Parse DynFlags for the newly discovered component
-  hscEnv <- emptyHscEnv ideNc libDir
+  hscEnv <- initEmptyHscEnv
   newTargetDfs <- evalGhcEnv hscEnv $ setOptions cfp opts (hsc_dflags hscEnv) rootDir
   let deps = componentDependencies opts ++ maybeToList hieYaml
   dep_info <- getDependencyInfo deps
