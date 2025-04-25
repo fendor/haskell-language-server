@@ -453,83 +453,30 @@ loadSessionWithOptions recorder SessionLoadingOptions{..} rootDir que = do
               , optExtensions
               } <- getIdeOptions
 
-    -- Create a new HscEnv from a hieYaml root and a set of options
-    let packageSetup :: (Maybe FilePath, NormalizedFilePath, ComponentOptions, FilePath)
-                     -> IO ([ComponentInfo], [ComponentInfo])
-        packageSetup (hieYaml, cfp, opts, libDir) = do
-          -- Parse DynFlags for the newly discovered component
-          hscEnv <- emptyHscEnv ideNc libDir
-          newTargetDfs <- evalGhcEnv hscEnv $ setOptions cfp opts (hsc_dflags hscEnv) rootDir
-          let deps = componentDependencies opts ++ maybeToList hieYaml
-          dep_info <- getDependencyInfo deps
-          -- Now lookup to see whether we are combining with an existing HscEnv
-          -- or making a new one. The lookup returns the HscEnv and a list of
-          -- information about other components loaded into the HscEnv
-          -- (unitId, DynFlag, Targets)
-          modifyVar hscEnvs $ \m -> do
-              -- Just deps if there's already an HscEnv
-              -- Nothing is it's the first time we are making an HscEnv
-              let oldDeps = Map.lookup hieYaml m
-              let -- Add the raw information about this component to the list
-                  -- We will modify the unitId and DynFlags used for
-                  -- compilation but these are the true source of
-                  -- information.
-                  new_deps = fmap (\(df, targets) -> RawComponentInfo (homeUnitId_ df) df targets cfp opts dep_info) newTargetDfs
-                  all_deps = new_deps `NE.appendList` fromMaybe [] oldDeps
-                  -- Get all the unit-ids for things in this component
-                  _inplace = map rawComponentUnitId $ NE.toList all_deps
-
-              all_deps' <- forM all_deps $ \RawComponentInfo{..} -> do
-                  let prefix = show rawComponentUnitId
-                  -- See Note [Avoiding bad interface files]
-                  let cacheDirOpts = componentOptions opts
-                  cacheDirs <- liftIO $ getCacheDirs prefix cacheDirOpts
-                  processed_df <- setCacheDirs recorder cacheDirs rawComponentDynFlags
-                  -- The final component information, mostly the same but the DynFlags don't
-                  -- contain any packages which are also loaded
-                  -- into the same component.
-                  pure $ ComponentInfo
-                           { componentUnitId = rawComponentUnitId
-                           , componentDynFlags = processed_df
-                           , componentTargets = rawComponentTargets
-                           , componentFP = rawComponentFP
-                           , componentCOptions = rawComponentCOptions
-                           , componentDependencyInfo = rawComponentDependencyInfo
-                           }
-              -- Modify the map so the hieYaml now maps to the newly updated
-              -- ComponentInfos
-              -- Returns
-              -- . The information for the new component which caused this cache miss
-              -- . The modified information (without -inplace flags) for
-              --   existing packages
-              let (new,old) = NE.splitAt (NE.length new_deps) all_deps'
-              pure (Map.insert hieYaml (NE.toList all_deps) m, (new,old))
-
-
     let session :: (Maybe FilePath, NormalizedFilePath, ComponentOptions, FilePath)
                 -> IO (IdeResult HscEnvEq,[FilePath])
-        session args@(hieYaml, _cfp, _opts, _libDir) = do
-          (new_deps, old_deps) <- packageSetup args
+        session args@(hieYaml, cfp, _opts, libdir) = do
+          (new_deps, old_deps) <- packageSetup recorder rootDir hscEnvs ideNc getCacheDirs args
 
           -- For each component, now make a new HscEnvEq which contains the
           -- HscEnv for the hie.yaml file but the DynFlags for that component
           -- For GHC's supporting multi component sessions, we create a shared
           -- HscEnv but set the active component accordingly
-          hscEnv <- emptyHscEnv ideNc _libDir
-          let new_cache = newComponentCache recorder optExtensions _cfp hscEnv
+          hscEnv <- emptyHscEnv ideNc libdir
+          let new_cache = newComponentCache recorder optExtensions cfp hscEnv
           all_target_details <- new_cache old_deps new_deps
 
           this_dep_info <- getDependencyInfo $ maybeToList hieYaml
           let (all_targets, this_flags_map, this_options)
-                = case HM.lookup _cfp flags_map' of
+                = case HM.lookup cfp flags_map' of
                     Just this -> (all_targets', flags_map', this)
-                    Nothing -> (this_target_details : all_targets', HM.insert _cfp this_flags flags_map', this_flags)
+                    Nothing -> (this_target_details : all_targets', HM.insert cfp this_flags flags_map', this_flags)
                   where all_targets' = concat all_target_details
                         flags_map' = HM.fromList (concatMap toFlagsMap all_targets')
-                        this_target_details = TargetDetails (TargetFile _cfp) this_error_env this_dep_info [_cfp]
+                        this_target_details = TargetDetails (TargetFile cfp) this_error_env this_dep_info [cfp]
                         this_flags = (this_error_env, this_dep_info)
                         this_error_env = ([this_error], Nothing)
-                        this_error = ideErrorWithSource (Just "cradle") (Just DiagnosticSeverity_Error) _cfp
+                        this_error = ideErrorWithSource (Just "cradle") (Just DiagnosticSeverity_Error) cfp
                                        (T.unlines
                                          [ "No cradle target found. Is this file listed in the targets of your cradle?"
                                          , "If you are using a .cabal file, please ensure that this module is listed in either the exposed-modules or other-modules section"
@@ -668,6 +615,65 @@ loadSessionWithOptions recorder SessionLoadingOptions{..} rootDir que = do
     returnWithVersion $ \file -> do
       -- see Note [Serializing runs in separate thread]
       awaitRunInThread que $ getOptions file
+
+-- | Create a new HscEnv from a hieYaml root and a set of options
+packageSetup ::
+  Recorder (WithPriority Log) ->
+  FilePath ->
+  Var (Map.Map (Maybe FilePath) [RawComponentInfo]) ->
+  NameCache ->
+  (String -> [String] -> IO CacheDirs) ->
+  (Maybe FilePath, NormalizedFilePath, ComponentOptions, FilePath) ->
+  IO ([ComponentInfo], [ComponentInfo])
+packageSetup recorder rootDir hscEnvs ideNc getCacheDirs (hieYaml, cfp, opts, libDir) = do
+  -- Parse DynFlags for the newly discovered component
+  hscEnv <- emptyHscEnv ideNc libDir
+  newTargetDfs <- evalGhcEnv hscEnv $ setOptions cfp opts (hsc_dflags hscEnv) rootDir
+  let deps = componentDependencies opts ++ maybeToList hieYaml
+  dep_info <- getDependencyInfo deps
+  -- Now lookup to see whether we are combining with an existing HscEnv
+  -- or making a new one. The lookup returns the HscEnv and a list of
+  -- information about other components loaded into the HscEnv
+  -- (unitId, DynFlag, Targets)
+  modifyVar hscEnvs $ \m -> do
+      -- Just deps if there's already an HscEnv
+      -- Nothing is it's the first time we are making an HscEnv
+      let oldDeps = Map.lookup hieYaml m
+      let -- Add the raw information about this component to the list
+          -- We will modify the unitId and DynFlags used for
+          -- compilation but these are the true source of
+          -- information.
+          new_deps = fmap (\(df, targets) -> RawComponentInfo (homeUnitId_ df) df targets cfp opts dep_info) newTargetDfs
+          all_deps = new_deps `NE.appendList` fromMaybe [] oldDeps
+          -- Get all the unit-ids for things in this component
+          _inplace = map rawComponentUnitId $ NE.toList all_deps
+
+      all_deps' <- forM all_deps $ \RawComponentInfo{..} -> do
+          let prefix = show rawComponentUnitId
+          -- See Note [Avoiding bad interface files]
+          let cacheDirOpts = componentOptions opts
+          cacheDirs <- liftIO $ getCacheDirs prefix cacheDirOpts
+          processed_df <- setCacheDirs recorder cacheDirs rawComponentDynFlags
+          -- The final component information, mostly the same but the DynFlags don't
+          -- contain any packages which are also loaded
+          -- into the same component.
+          pure $ ComponentInfo
+                    { componentUnitId = rawComponentUnitId
+                    , componentDynFlags = processed_df
+                    , componentTargets = rawComponentTargets
+                    , componentFP = rawComponentFP
+                    , componentCOptions = rawComponentCOptions
+                    , componentDependencyInfo = rawComponentDependencyInfo
+                    }
+      -- Modify the map so the hieYaml now maps to the newly updated
+      -- ComponentInfos
+      -- Returns
+      -- . The information for the new component which caused this cache miss
+      -- . The modified information (without -inplace flags) for
+      --   existing packages
+      let (new,old) = NE.splitAt (NE.length new_deps) all_deps'
+      pure (Map.insert hieYaml (NE.toList all_deps) m, (new,old))
+
 
 -- | Populate the knownTargetsVar with all the
 -- files in the project so that `knownFiles` can learn about them and
