@@ -52,6 +52,15 @@ renderCradleError (CradleError deps _ec ms) cradle nfp =
     fileMissingMessage =
       multiCradleErrMessage <$> parseMultiCradleErr ms
 
+unknownTargetError :: NormalizedFilePath -> FileDiagnostic
+unknownTargetError cfp =
+  ideErrorWithSource
+    (Just "cradle")
+    (Just DiagnosticSeverity_Error)
+    cfp
+    (T.unlines unknownTargetMessage)
+    Nothing
+
 -- | Information included in Multi Cradle error messages
 data MultiCradleErr = MultiCradleErr
   { mcPwd      :: FilePath
@@ -105,4 +114,10 @@ unknownModuleMessage moduleFileName =
   , "Perhaps you need to add `"<> dropExtension (takeFileName moduleFileName) <> "` to other-modules or exposed-modules."
   , ""
   , "For more information, visit: https://cabal.readthedocs.io/en/3.4/developing-packages.html#modules-included-in-the-package"
+  ]
+
+unknownTargetMessage :: [T.Text]
+unknownTargetMessage =
+  [ "No cradle target found. Is this file listed in the targets of your cradle?"
+  , "If you are using a .cabal file, please ensure that this module is listed in either the exposed-modules or other-modules section"
   ]
