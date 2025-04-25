@@ -26,7 +26,7 @@ import           Control.Monad
 import           Control.Monad.Extra                 as Extra
 import           Control.Monad.IO.Class
 import qualified Crypto.Hash.SHA1                    as H
-import           Data.Aeson                          hiding (Error)
+import           Data.Aeson                          hiding (Error, Key)
 import           Data.Bifunctor
 import qualified Data.ByteString.Base16              as B16
 import qualified Data.ByteString.Char8               as B
@@ -90,7 +90,7 @@ import           Control.Applicative                 (Alternative ((<|>)))
 import           Data.Void
 
 import           Control.Concurrent.STM.Stats        (atomically, modifyTVar',
-                                                      readTVar, writeTVar)
+                                                      readTVar, writeTVar, TVar)
 import           Control.Concurrent.STM.TQueue
 import           Control.DeepSeq
 import           Control.Exception                   (evaluate)
@@ -109,7 +109,7 @@ import qualified Development.IDE.GHC.Compat.Util     as Compat
 import           Development.IDE.Session.Diagnostics (renderCradleError)
 import           Development.IDE.Types.Shake         (WithHieDb,
                                                       WithHieDbShield (..),
-                                                      toNoFileKey)
+                                                      toNoFileKey, Key)
 import           GHC.Data.Graph.Directed
 import           HieDb.Create
 import           HieDb.Types
@@ -453,42 +453,6 @@ loadSessionWithOptions recorder SessionLoadingOptions{..} rootDir que = do
               , optExtensions
               } <- getIdeOptions
 
-        -- populate the knownTargetsVar with all the
-        -- files in the project so that `knownFiles` can learn about them and
-        -- we can generate a complete module graph
-    let extendKnownTargets newTargets = do
-          knownTargets <- concatForM  newTargets $ \TargetDetails{..} ->
-            case targetTarget of
-              TargetFile f -> do
-                -- If a target file has multiple possible locations, then we
-                -- assume they are all separate file targets.
-                -- This happens with '.hs-boot' files if they are in the root directory of the project.
-                -- GHC reports options such as '-i. A' as 'TargetFile A.hs' instead of 'TargetModule A'.
-                -- In 'fromTargetId', we dutifully look for '.hs-boot' files and add them to the
-                -- targetLocations of the TargetDetails. Then we add everything to the 'knownTargetsVar'.
-                -- However, when we look for a 'Foo.hs-boot' file in 'FindImports.hs', we look for either
-                --
-                --  * TargetFile Foo.hs-boot
-                --  * TargetModule Foo
-                --
-                -- If we don't generate a TargetFile for each potential location, we will only have
-                -- 'TargetFile Foo.hs' in the 'knownTargetsVar', thus not find 'TargetFile Foo.hs-boot'
-                -- and also not find 'TargetModule Foo'.
-                fs <- filterM (IO.doesFileExist . fromNormalizedFilePath) targetLocations
-                pure $ map (\fp -> (TargetFile fp, Set.singleton fp)) (nubOrd (f:fs))
-              TargetModule _ -> do
-                found <- filterM (IO.doesFileExist . fromNormalizedFilePath) targetLocations
-                return [(targetTarget, Set.fromList found)]
-          hasUpdate <- atomically $ do
-            known <- readTVar knownTargetsVar
-            let known' = flip mapHashed known $ \k -> unionKnownTargets k (mkKnownTargets knownTargets)
-                hasUpdate = if known /= known' then Just (unhashed known') else Nothing
-            writeTVar knownTargetsVar known'
-            pure hasUpdate
-          for_ hasUpdate $ \x ->
-            logWith recorder Debug $ LogKnownFilesUpdated (targetMap x)
-          return $ toNoFileKey GetKnownTargets
-
     -- Create a new HscEnv from a hieYaml root and a set of options
     let packageSetup :: (Maybe FilePath, NormalizedFilePath, ComponentOptions, FilePath)
                      -> IO ([ComponentInfo], [ComponentInfo])
@@ -578,7 +542,7 @@ loadSessionWithOptions recorder SessionLoadingOptions{..} rootDir que = do
           -- Invalidate all the existing GhcSession build nodes by restarting the Shake session
           keys2 <- invalidateShakeCache
           restartShakeSession VFSUnmodified "new component" [] $ do
-            keys1 <- extendKnownTargets all_targets
+            keys1 <- extendKnownTargets recorder knownTargetsVar all_targets
             return [keys1, keys2]
 
           -- Typecheck all files in the project on startup
@@ -704,6 +668,43 @@ loadSessionWithOptions recorder SessionLoadingOptions{..} rootDir que = do
     returnWithVersion $ \file -> do
       -- see Note [Serializing runs in separate thread]
       awaitRunInThread que $ getOptions file
+
+-- | Populate the knownTargetsVar with all the
+-- files in the project so that `knownFiles` can learn about them and
+-- we can generate a complete module graph
+extendKnownTargets :: Recorder (WithPriority Log) -> TVar (Hashed KnownTargets) -> [TargetDetails] -> IO Key
+extendKnownTargets recorder knownTargetsVar newTargets = do
+  knownTargets <- concatForM  newTargets $ \TargetDetails{..} ->
+    case targetTarget of
+      TargetFile f -> do
+        -- If a target file has multiple possible locations, then we
+        -- assume they are all separate file targets.
+        -- This happens with '.hs-boot' files if they are in the root directory of the project.
+        -- GHC reports options such as '-i. A' as 'TargetFile A.hs' instead of 'TargetModule A'.
+        -- In 'fromTargetId', we dutifully look for '.hs-boot' files and add them to the
+        -- targetLocations of the TargetDetails. Then we add everything to the 'knownTargetsVar'.
+        -- However, when we look for a 'Foo.hs-boot' file in 'FindImports.hs', we look for either
+        --
+        --  * TargetFile Foo.hs-boot
+        --  * TargetModule Foo
+        --
+        -- If we don't generate a TargetFile for each potential location, we will only have
+        -- 'TargetFile Foo.hs' in the 'knownTargetsVar', thus not find 'TargetFile Foo.hs-boot'
+        -- and also not find 'TargetModule Foo'.
+        fs <- filterM (IO.doesFileExist . fromNormalizedFilePath) targetLocations
+        pure $ map (\fp -> (TargetFile fp, Set.singleton fp)) (nubOrd (f:fs))
+      TargetModule _ -> do
+        found <- filterM (IO.doesFileExist . fromNormalizedFilePath) targetLocations
+        return [(targetTarget, Set.fromList found)]
+  hasUpdate <- atomically $ do
+    known <- readTVar knownTargetsVar
+    let known' = flip mapHashed known $ \k -> unionKnownTargets k (mkKnownTargets knownTargets)
+        hasUpdate = if known /= known' then Just (unhashed known') else Nothing
+    writeTVar knownTargetsVar known'
+    pure hasUpdate
+  for_ hasUpdate $ \x ->
+    logWith recorder Debug $ LogKnownFilesUpdated (targetMap x)
+  return $ toNoFileKey GetKnownTargets
 
 -- | Run the specific cradle on a specific FilePath via hie-bios.
 -- This then builds dependencies or whatever based on the cradle, gets the
