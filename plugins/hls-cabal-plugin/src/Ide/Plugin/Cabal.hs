@@ -34,7 +34,7 @@ import           Development.IDE.Graph                         (Key,
                                                                 alwaysRerun)
 import           Development.IDE.LSP.HoverDefinition           (foundHover)
 import qualified Development.IDE.Plugin.Completions.Logic      as Ghcide
-import           Development.IDE.Types.Shake                   (toKey)
+import           Development.IDE.Types.Shake                   (toKey, toNoFileKey)
 import qualified Distribution.CabalSpecVersion                 as Cabal
 import qualified Distribution.Fields                           as Syntax
 import           Distribution.Package                          (Dependency)
@@ -154,7 +154,7 @@ descriptor recorder plId =
               \ide vfs _ (DidSaveTextDocumentParams TextDocumentIdentifier{_uri} _) -> liftIO $ do
                 whenUriFile _uri $ \file -> do
                   log' Debug $ LogDocSaved _uri
-                  restartCabalShakeSession (shakeExtras ide) vfs file "(saved)" $
+                  restartCabalShakeSession2 (shakeExtras ide) vfs file "(saved)" $
                     addFileOfInterest recorder ide file OnDisk
           , mkPluginNotificationHandler LSP.SMethod_TextDocumentDidClose $
               \ide vfs _ (DidCloseTextDocumentParams TextDocumentIdentifier{_uri}) -> liftIO $ do
@@ -187,6 +187,12 @@ restartCabalShakeSession shakeExtras vfs file actionMsg actionBetweenSession = d
   restartShakeSession shakeExtras (VFSModified vfs) (fromNormalizedFilePath file ++ " " ++ actionMsg) [] $ do
     keys <- actionBetweenSession
     return (toKey GetModificationTime file:keys)
+
+restartCabalShakeSession2 :: ShakeExtras -> VFS.VFS -> NormalizedFilePath -> String -> IO [Key] -> IO ()
+restartCabalShakeSession2 shakeExtras vfs file actionMsg actionBetweenSession = do
+  restartShakeSession shakeExtras (VFSModified vfs) (fromNormalizedFilePath file ++ " " ++ actionMsg) [] $ do
+    keys <- actionBetweenSession
+    return (toNoFileKey GhcSessionIO : toKey GetModificationTime file : toKey (GetModificationTime_ False True) file :keys)
 
 -- ----------------------------------------------------------------
 -- Plugin Rules

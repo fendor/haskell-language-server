@@ -110,22 +110,19 @@ addWatchedFileRule recorder isWatched = defineNoDiagnostics (cmapWithPrio LogSha
 
 
 getModificationTimeRule :: Recorder (WithPriority Log) -> Rules ()
-getModificationTimeRule recorder = defineEarlyCutoff (cmapWithPrio LogShake recorder) $ Rule $ \(GetModificationTime_ missingFileDiags) file ->
-    getModificationTimeImpl missingFileDiags file
+getModificationTimeRule recorder = defineEarlyCutoff (cmapWithPrio LogShake recorder) $ Rule $ \(GetModificationTime_ missingFileDiags phyiscalOnly) file ->
+    getModificationTimeImpl missingFileDiags phyiscalOnly file
 
 getModificationTimeImpl
   :: Bool
+  -> Bool
   -> NormalizedFilePath
   -> Action (Maybe BS.ByteString, ([FileDiagnostic], Maybe FileVersion))
-getModificationTimeImpl missingFileDiags file = do
+getModificationTimeImpl missingFileDiags physical file = do
     let file' = fromNormalizedFilePath file
     let wrap time = (Just $ LBS.toStrict $ B.encode $ toRational time, ([], Just $ ModificationTime time))
-    mbVf <- getVirtualFile file
-    case mbVf of
-        Just (virtualFileVersion -> ver) -> do
-            alwaysRerun
-            pure (Just $ LBS.toStrict $ B.encode ver, ([], Just $ VFSVersion ver))
-        Nothing -> do
+    if physical
+        then do
             isWF <- use_ AddWatchedFile file
             if isWF
                 then -- the file is watched so we can rely on FileWatched notifications,
@@ -146,6 +143,33 @@ getModificationTimeImpl missingFileDiags file = do
                     if isDoesNotExistError e && not missingFileDiags
                         then return (Nothing, ([], Nothing))
                         else return (Nothing, ([diag], Nothing))
+        else do
+            mbVf <- getVirtualFile file
+            case mbVf of
+                Just (virtualFileVersion -> ver) -> do
+                    alwaysRerun
+                    pure (Just $ LBS.toStrict $ B.encode ver, ([], Just $ VFSVersion ver))
+                Nothing -> do
+                    isWF <- use_ AddWatchedFile file
+                    if isWF
+                        then -- the file is watched so we can rely on FileWatched notifications,
+                                -- but also need a dependency on IsFileOfInterest to reinstall
+                                -- alwaysRerun when the file becomes VFS
+                            void (use_ IsFileOfInterest file)
+                        else if isInterface file
+                            then -- interface files are tracked specially using the closed world assumption
+                                pure ()
+                            else -- in all other cases we will need to freshly check the file system
+                                alwaysRerun
+
+                    liftIO $ fmap wrap (getModTime file')
+                        `catch` \(e :: IOException) -> do
+                            let err | isDoesNotExistError e = "File does not exist: " ++ file'
+                                    | otherwise = "IO error while reading " ++ file' ++ ", " ++ displayException e
+                                diag = ideErrorText file (T.pack err)
+                            if isDoesNotExistError e && not missingFileDiags
+                                then return (Nothing, ([], Nothing))
+                                else return (Nothing, ([diag], Nothing))
 
 -- | Interface files cannot be watched, since they live outside the workspace.
 --   But interface files are private, in that only HLS writes them.

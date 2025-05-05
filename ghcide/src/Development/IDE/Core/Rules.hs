@@ -713,7 +713,7 @@ loadGhcSession recorder ghcSessionDepsConfig = do
                 let nfp = toNormalizedFilePath' fp
                 itExists <- getFileExists nfp
                 when itExists $ void $ do
-                  use_ GetModificationTime nfp
+                  use_ GetModificationTime_{missingFileDiagnostics = False, physicalOnly=True} nfp
         mapM_ addDependency deps
 
         let cutoffHash = LBS.toStrict $ B.encode (hash (snd val))
@@ -799,7 +799,7 @@ getModIfaceFromDiskRule recorder = defineEarlyCutoff (cmapWithPrio LogShake reco
           recompInfo = RecompilationInfo
             { source_version = ver
             , old_value = m_old
-            , get_file_version = use GetModificationTime_{missingFileDiagnostics = False}
+            , get_file_version = use GetModificationTime_{missingFileDiagnostics = False, physicalOnly=False}
             , get_linkable_hashes = \fs -> map (snd . fromJust . hirCoreFp) <$> uses_ GetModIface fs
             , get_module_graph = useNoFile_ GetModuleGraph
             , regenerate = regenerateHiFile session f ms
