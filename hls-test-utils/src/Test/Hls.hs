@@ -142,12 +142,14 @@ import           System.Process.Extra                     (createPipe)
 import           System.Time.Extra
 import qualified Test.Hls.FileSystem                      as FS
 import           Test.Hls.FileSystem
+import           Test.Hls.Ingredients.ConsoleReporter     (consoleTestReporter)
 import           Test.Hls.Util
 import           Test.Tasty                               hiding (Timeout)
 import           Test.Tasty.ExpectedFailure
 import           Test.Tasty.Golden
 import           Test.Tasty.HUnit
-import           Test.Tasty.Ingredients.Rerun
+import           Test.Tasty.Ingredients.Basic             (listingTests)
+import           Test.Tasty.Ingredients.Rerun             (rerunningTests)
 
 data Log
   = LogIDEMain IDEMain.Log
@@ -179,9 +181,12 @@ data ExpectBroken (k :: BrokenBehavior) a where
 unCurrent :: ExpectBroken 'Current a -> a
 unCurrent (BrokenCurrent a) = a
 
--- | Run 'defaultMainWithRerun', limiting each single test case running at most 10 minutes
+-- | Run 'defaultMainWithRerun', limiting each single test case running at most 2 minutes
 defaultTestRunner :: TestTree -> IO ()
-defaultTestRunner = defaultMainWithRerun . adjustOption (const $ mkTimeout 600000000)
+defaultTestRunner =
+  defaultMainWithIngredients [ rerunningTests [ listingTests, consoleTestReporter ] ]
+ . adjustOption (const $ mkTimeout 2_0000_000)
+
 
 gitDiff :: FilePath -> FilePath -> [String]
 gitDiff fRef fNew = ["git", "-c", "core.fileMode=false", "diff", "--no-index", "--text", "--exit-code", fRef, fNew]
@@ -833,9 +838,9 @@ runSessionWithTestConfig TestConfig{..} session =
 
     where
         shiftRoot shiftTarget f  =
-            if testShiftRoot
-                then withLock lock $ keepCurrentDirectory $ setCurrentDirectory shiftTarget >> f
-                else f
+            -- if testShiftRoot
+                withLock lock $ keepCurrentDirectory $ setCurrentDirectory shiftTarget >> f
+                -- else f
         runSessionInVFS (Left testConfigRoot) act = do
             root <- makeAbsolute testConfigRoot
             withTemporaryDataAndCacheDirectory (const $ act root)

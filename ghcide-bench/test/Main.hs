@@ -16,10 +16,9 @@ import qualified Experiments                  as Bench
 import           Language.LSP.Test
 import           Test.Tasty
 import           Test.Tasty.HUnit
-import           Test.Tasty.Ingredients.Rerun (defaultMainWithRerun)
 
 main :: IO ()
-main = defaultMainWithRerun benchmarkTests
+main = defaultTestRunner benchmarkTests
 
 benchmarkTests :: TestTree
 benchmarkTests =

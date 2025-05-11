@@ -27,14 +27,16 @@ source-repository head
 library
   exposed-modules:
     Test.Hls
-    Test.Hls.Util
     Test.Hls.FileSystem
+    Test.Hls.Ingredients.ConsoleReporter
+    Test.Hls.Util
     Development.IDE.Test
     Development.IDE.Test.Diagnostic
 
   hs-source-dirs:   src
   build-depends:
     , aeson
+    , ansi-terminal
     , async
     , base                    >=4.12 && <5
     , bytestring
@@ -51,6 +53,7 @@ library
     , lsp-types               ^>=2.3
     , neat-interpolation
     , safe-exceptions
+    , stm
     , tasty
     , tasty-expected-failure
     , tasty-golden
@@ -59,6 +62,7 @@ library
     , temporary
     , text
     , text-rope
+    , transformers
 
   ghc-options:
     -Wall
@@ -68,5 +72,8 @@ library
 
   if flag(pedantic)
     ghc-options: -Werror
+
+  if !os(windows) && !impl(ghcjs)
+    cpp-options: -DUSE_WCWIDTH
 
   default-language: GHC2021

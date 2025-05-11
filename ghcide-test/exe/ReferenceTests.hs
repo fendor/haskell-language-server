@@ -184,7 +184,6 @@ referenceTestSession name thisDoc docs' f = do
     -- Initial Index
     docid <- openDoc thisDoc "haskell"
 
-    liftIO $ putStrLn $ "docs:" <> show docs
     let
         -- todo wait for docs
         loop :: [FilePath] -> Session ()
