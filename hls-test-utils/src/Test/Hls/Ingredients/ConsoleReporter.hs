@@ -5,16 +5,13 @@
 module Test.Hls.Ingredients.ConsoleReporter (consoleTestReporter) where
 
 import           Control.Monad                          (join, unless, void,
-                                                         when)
+                                                         when, forM_)
 import           Control.Monad.Trans.Reader             (Reader, ask, runReader)
 import           Data.Char
 import           Prelude                                hiding (EQ, fail)
 import           Test.Tasty.Options
 import           Test.Tasty.Providers.ConsoleFormat
 import           Text.Printf
-#ifdef USE_WCWIDTH
-import           Foreign.C.Types                        (CInt (..), CWchar (..))
-#endif
 import           Control.Concurrent.STM
 import           Control.Exception
 import           Control.Monad.IO.Class                 (liftIO)
@@ -32,6 +29,10 @@ import           Test.Tasty.Ingredients.ConsoleReporter hiding (buildTestOutput,
 import           Test.Tasty.Providers
 import           Test.Tasty.Runners                     hiding
                                                         (consoleTestReporter)
+
+import Debug.Trace
+import Data.IntMap (IntMap)
+import Data.Functor ((<&>))
 
 type Level = Int
 
@@ -100,8 +101,37 @@ consoleTestReporter = TestReporter consoleTestReporterOptions $
 
           return $ \time -> do
             stats <- computeStatistics smap
+            let
+              testNames = foldTestTree (trivialFold { foldSingle = \ _ name _ -> [name] }) opts tree
+            when (statFailures stats /= 0) $ do
+              fails <- summariseTestFailures testNames smap
+              printFails opts fails
             printStatistics stats time
             return $ statFailures stats == 0
+
+printFails :: OptionSet -> [(TestName, FailureReason)] -> IO ()
+printFails opts testFails = do
+  hSetBuffering stdout LineBuffering
+  let
+    whenColor = lookupOption opts
+  isTermColor <- hSupportsANSIColor stdout
+  let
+    ?colors = useColor whenColor isTermColor
+  forM_ testFails $ \ (name, reason) -> do
+    infoOk name
+    infoOk " ... "
+    infoFail "FAIL"
+
+summariseTestFailures :: [TestName] -> StatusMap -> IO [(TestName, FailureReason)]
+summariseTestFailures names sMap =
+  getApp $ foldMap (\(var, name) -> Ap $
+      getResultFromTVar var <&>
+       (\r -> case resultOutcome r of
+        Success -> []
+        Failure reason ->
+          [(name, reason)]
+      )
+    ) (zip (fmap snd $ IntMap.toAscList sMap) names)
 
 -- {{{
 consoleOutput :: (?colors :: Bool) => TestOutput -> StatusMap -> IO ()
@@ -390,21 +420,14 @@ formatDesc n desc =
       then paddedDesc
       else chomped
 
-
--- | Compute the length/width of the string as it would appear in a monospace
---   terminal. This takes into account that even in a “mono”space font, not
---   all characters actually have the same width, in particular, most CJK
---   characters have twice the same as Western characters.
---
---   (This only works properly on Unix at the moment; on Windows, the function
---   treats every character as width-1 like 'Data.List.length' does.)
-stringWidth :: String -> Int
-#ifdef USE_WCWIDTH
-stringWidth = Prelude.sum . map charWidth
- where charWidth c = case wcwidth (fromIntegral (ord c)) of
-        -1 -> 1  -- many chars have "undefined" width; default to 1 for these.
-        w  -> fromIntegral w
-foreign import capi safe "wchar.h wcwidth" wcwidth :: CWchar -> CInt
-#else
-stringWidth = length
-#endif
+--------------------------------------------------
+-- Various utilities
+--------------------------------------------------
+-- {{{
+getResultFromTVar :: TVar Status -> IO Result
+getResultFromTVar var =
+  atomically $ do
+    status <- readTVar var
+    case status of
+      Done r -> return r
+      _ -> retry
