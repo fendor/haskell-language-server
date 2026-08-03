@@ -42,13 +42,18 @@ import           Development.IDE.Test        (canonicalizeUri)
 import           Ide.Types                   (defaultPluginDescriptor)
 import qualified Language.LSP.Protocol.Lens  as L
 import           Language.LSP.Protocol.Types (Null (..))
+import           System.Directory            (makeAbsolute)
 import           System.Environment.Blank    (setEnv, unsetEnv)
 import           System.FilePath             ((</>))
+import           System.IO.Unsafe            (unsafePerformIO)
 import           Test.Hls
 import qualified Test.Hls.FileSystem         as FS
 
+-- | Absolute because tests change the working directory.
+-- Forced by 'Main.main' before any of them run.
+{-# NOINLINE testDataDir #-}
 testDataDir :: FilePath
-testDataDir = "ghcide-test" </> "data"
+testDataDir = unsafePerformIO $ makeAbsolute $ "ghcide-test" </> "data"
 
 mkIdeTestFs :: [FS.FileTree] -> FS.VirtualFileTree
 mkIdeTestFs = FS.mkVirtualFileTree testDataDir

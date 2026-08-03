@@ -55,7 +55,7 @@ tests = testGroup "ghc-plugins"
   ]
 
 pluginKnownNatVfs :: VirtualFileTree
-pluginKnownNatVfs = FS.mkVirtualFileTree ("ghcide-test" </> "data" </> "plugin-knownnat") $
+pluginKnownNatVfs = FS.mkVirtualFileTree (testDataDir </> "plugin-knownnat") $
   FS.simpleCabalProject
     [ "cabal.project"
     , "KnownNat.hs"
@@ -63,7 +63,7 @@ pluginKnownNatVfs = FS.mkVirtualFileTree ("ghcide-test" </> "data" </> "plugin-k
     ]
 
 pluginParsreVfs :: VirtualFileTree
-pluginParsreVfs = FS.mkVirtualFileTree ("ghcide-test" </> "data" </> "plugin-parser") $
+pluginParsreVfs = FS.mkVirtualFileTree (testDataDir </> "plugin-parser") $
   [ simpleCabalCradle
   , copy "cabal.project"
   , directory "plugin"
