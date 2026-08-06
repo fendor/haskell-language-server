@@ -30,8 +30,6 @@
 
 module Main (main) where
 
-import qualified Config
-import           Control.Exception (evaluate)
 import qualified HieDbRetry
 import           Test.Tasty
 import           Test.Tasty.Ingredients.Rerun
@@ -74,8 +72,6 @@ import           WatchedFileTests
 
 main :: IO ()
 main = do
-  -- Force testDataDir before a test changes the working directory.
-  _ <- evaluate (length Config.testDataDir)
   -- We mess with env vars so run single-threaded.
   defaultTestRunner $ testGroup "ghcide"
     [ OpenCloseTest.tests

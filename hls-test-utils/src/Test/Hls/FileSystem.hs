@@ -119,12 +119,9 @@ materialise rootDir' fileTree testDataDir' = do
 
       copyDir' :: FilePath -> FilePath -> IO ()
       copyDir' root dir = do
-        -- The working directory is process global and tests run concurrently.
-        let srcDir = testDataDir </> dir
-        files <- fmap FP.normalise . lines <$> readProcess "git"
-          ["-C", srcDir, "ls-files", "--cached", "--modified", "--others"] ""
+        files <- fmap FP.normalise . lines <$> withCurrentDirectory (testDataDir </> dir) (readProcess "git" ["ls-files", "--cached", "--modified", "--others"] "")
         mapM_ (createDirectoryIfMissing True . ((root </>) . takeDirectory)) files
-        mapM_ (\f -> copyFile (srcDir </> f) (root </> f)) files
+        mapM_ (\f -> copyFile (testDataDir </> dir </> f) (root </> f)) files
         return ()
 
   traverse_ (persist rootDir) fileTree
